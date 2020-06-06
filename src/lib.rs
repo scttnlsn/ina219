@@ -1,8 +1,10 @@
+#![no_std]
+
 extern crate byteorder;
-extern crate i2cdev;
+extern crate embedded_hal as hal;
 
 use byteorder::{ByteOrder, BigEndian};
-use i2cdev::core::{I2CDevice};
+use hal::blocking::i2c;
 
 pub const INA219_ADDR: u8 = 0x41;
 
@@ -15,47 +17,53 @@ enum Register {
     Calibration = 0x05
 }
 
-pub struct INA219<T: I2CDevice> {
-    device: T
+pub struct INA219<I2C> {
+    i2c: I2C,
+    address: u8
 }
 
-impl<T> INA219<T> where T: I2CDevice {
-    pub fn new(device: T) -> INA219<T> {
-        INA219 { device: device }
+impl<I2C, E> INA219<I2C>
+    where I2C: i2c::Write<Error = E> + i2c::Read<Error = E> {
+    pub fn new(i2c: I2C, address: u8) -> INA219<I2C> {
+        INA219 {
+            i2c,
+            address
+        }
     }
 
-    pub fn calibrate(&mut self, values: &[u8]) -> Result<(), T::Error> {
-        let mut data = vec![Register::Calibration as u8];
-        data.extend(values.iter().cloned());
-        self.device.write(&mut data)?;
+    pub fn calibrate(&mut self, value: u16) -> Result<(), E> {
+        self.i2c.write(self.address, &[
+            Register::Calibration as u8,
+            (value >> 8) as u8,
+            value as u8
+        ])?;
         Ok(())
     }
 
-    pub fn shunt_voltage(&mut self) -> Result<i16, T::Error> {
+    pub fn shunt_voltage(&mut self) -> Result<i16, E> {
         let value = self.read(Register::ShuntVoltage)?;
         Ok(value as i16)
     }
 
-    pub fn voltage(&mut self) -> Result<u16, T::Error> {
+    pub fn voltage(&mut self) -> Result<u16, E> {
         let value = self.read(Register::BusVoltage)?;
         Ok((value >> 3) * 4)
     }
 
-    pub fn power(&mut self) -> Result<i16, T::Error> {
+    pub fn power(&mut self) -> Result<i16, E> {
         let value = self.read(Register::Power)?;
         Ok(value as i16)
     }
 
-    pub fn current(&mut self) -> Result<i16, T::Error> {
+    pub fn current(&mut self) -> Result<i16, E> {
         let value = self.read(Register::Current)?;
         Ok(value as i16)
     }
 
-    fn read(&mut self, register: Register) -> Result<u16, T::Error> {
+    fn read(&mut self, register: Register) -> Result<u16, E> {
         let mut buf: [u8; 2] = [0x00; 2];
-        self.device.smbus_write_byte(register as u8)?;
-        self.device.read(&mut buf)?;
-
+        self.i2c.write(self.address, &[register as u8])?;
+        self.i2c.read(self.address, &mut buf)?;
         Ok(BigEndian::read_u16(&buf))
     }
 }

@@ -1,8 +1,8 @@
 [package]
 name = "ina219"
 description = "INA219 current/power monitor driver"
-version = "0.0.2"
-keywords = ["ina219", "driver", "i2c", "current", "power"]
+version = "0.1.0"
+keywords = ["ina219", "driver", "i2c", "current", "power", "no_std"]
 repository = "https://github.com/scttnlsn/ina219"
 authors = ["Scott Nelson <scott@scottnelson.co>"]
 license = "MIT/Apache-2.0"
@@ -10,4 +10,8 @@ license = "MIT/Apache-2.0"
 
 [dependencies]
 byteorder = "1.2.1"
-i2cdev = "0.3.2"
+embedded-hal = "0.2"
+
+[dev-dependencies]
+linux-embedded-hal = "0.2"
+embedded-hal-mock = "0.4"
