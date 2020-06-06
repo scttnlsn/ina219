@@ -8,17 +8,17 @@
 ## Example
 
 ```rust
-extern crate i2cdev;
 extern crate ina219;
+extern crate linux_embedded_hal as hal;
 
-use i2cdev::linux::{LinuxI2CDevice};
+use hal::I2cdev;
 use ina219::{INA219, INA219_ADDR};
 
 fn main() {
-    let device = LinuxI2CDevice::new("/dev/i2c-1", INA219_ADDR as u16).unwrap();
-    let mut ina = INA219::new(device);
+    let device = I2cdev::new("/dev/i2c-1").unwrap();
+    let mut ina = INA219::new(device, INA219_ADDR);
 
-    ina.calibrate(&[0x10, 0x00]).unwrap();
+    ina.calibrate(0x0100).unwrap();
 
     let voltage = ina.voltage().unwrap();
     println!("bus voltage: {:?}", voltage);
