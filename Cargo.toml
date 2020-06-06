@@ -9,7 +9,7 @@ license = "MIT/Apache-2.0"
 
 
 [dependencies]
-byteorder = "1.2.1"
+byteorder = {version = "1.2.1", default-features = false}
 embedded-hal = "0.2"
 
 [dev-dependencies]
