@@ -1,10 +1,10 @@
 [package]
 name = "ina219"
 description = "INA219 current/power monitor driver"
-version = "0.2.0"
+version = "0.2.1"
 keywords = ["ina219", "driver", "i2c", "current", "no_std"]
 repository = "https://github.com/scttnlsn/ina219"
-authors = ["Scott Nelson <scott@scottnelson.co>"]
+authors = ["Scott Nelson <scott@scottnelson.co>,Samuel Freeman <admin@sndnvaps.com>"]
 license = "MIT/Apache-2.0"
 
 
