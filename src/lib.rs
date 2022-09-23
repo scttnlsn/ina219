@@ -1,5 +1,5 @@
 extern crate byteorder;
 extern crate embedded_hal as emb_hal;
 
-mod ina219;
-mod physic;
+pub mod ina219;
+pub mod physic;
