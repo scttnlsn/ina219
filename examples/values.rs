@@ -26,24 +26,4 @@ fn main() {
 }
 	*/
 
-    /* 
-    let voltage = ina.voltage().unwrap();
-    println!("bus voltage: {:?}",voltage);
-
-    let voltage_raw = ina.voltage_raw().unwrap();
-    println!("bus voltage_raw: {:?}",voltage_raw);
-
-    let shunt = ina.shunt_voltage().unwrap();
-    println!("shunt voltage: {:?}",shunt);
-
-    let current = ina.current().unwrap();
-    println!("current: {:?}",current);
-
-    let current_raw = ina.current_raw().unwrap();
-    println!("current_raw: {:?}",current_raw);
-
-    let power = ina.power().unwrap();
-    println!("power: {:?}",power);
-    */
-
 }

@@ -6,6 +6,11 @@
 
 ## Example
 
+```bash
+cargo build --example values --target=aarch64-unknown-linux-musl
+cargo build --example raw_values --target=aarch64-unknown-linux-musl
+```
+
 ## add this line to Cargo.toml
 
 ```toml
