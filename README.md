@@ -1,7 +1,6 @@
 # ina219
 
-[![Travis CI Status](https://travis-ci.org/scttnlsn/ina219.svg?branch=master)](https://travis-ci.org/scttnlsn/ina219)
-[![crates.io](https://img.shields.io/crates/v/ina219.svg)](https://crates.io/crates/ina219)
+[![crates.io](https://img.shields.io/crates/v/ina219_rs.svg)](https://crates.io/crates/ina219_rs)
 
 [INA219](http://www.ti.com/product/INA219) current/power monitor driver for Rust
 
@@ -10,13 +9,13 @@
 ## add this line to Cargo.toml
 
 ```toml
-ina219 = "0.2.1"
+ina219_rs = "0.2.1"
 ```
 
 ```rust
 extern crate linux_embedded_hal as hal;
 
-extern crate ina219;
+extern crate ina219_rs as ina219;
 
 use hal::I2cdev;
 use ina219::physic;

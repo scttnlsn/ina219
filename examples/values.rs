@@ -1,6 +1,6 @@
 extern crate linux_embedded_hal as hal;
 
-extern crate ina219;
+extern crate ina219_rs as ina219;
 
 use hal::I2cdev;
 use ina219::physic;
