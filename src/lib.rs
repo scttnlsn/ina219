@@ -12,21 +12,20 @@ enum Register {
     BusVoltage = 0x02,
     Power = 0x03,
     Current = 0x04,
-    Calibration = 0x05
+    Calibration = 0x05,
 }
 
 pub struct INA219<I2C> {
     i2c: I2C,
-    address: u8
+    address: u8,
 }
 
 impl<I2C, E> INA219<I2C>
-    where I2C: i2c::Write<Error = E> + i2c::Read<Error = E> {
+where
+    I2C: i2c::Write<Error = E> + i2c::Read<Error = E>,
+{
     pub fn new(i2c: I2C, address: u8) -> INA219<I2C> {
-        INA219 {
-            i2c,
-            address
-        }
+        INA219 { i2c, address }
     }
 
     pub fn configuration(&mut self) -> Result<configuration::Register, E> {
