@@ -1,10 +1,6 @@
 #![no_std]
 
-extern crate byteorder;
-extern crate embedded_hal as hal;
-
-use byteorder::{ByteOrder, BigEndian};
-use hal::blocking::i2c;
+use embedded_hal::blocking::i2c;
 
 pub const INA219_ADDR: u8 = 0x41;
 
@@ -64,6 +60,6 @@ impl<I2C, E> INA219<I2C>
         let mut buf: [u8; 2] = [0x00; 2];
         self.i2c.write(self.address, &[register as u8])?;
         self.i2c.read(self.address, &mut buf)?;
-        Ok(BigEndian::read_u16(&buf))
+        Ok(u16::from_be_bytes(buf))
     }
 }
