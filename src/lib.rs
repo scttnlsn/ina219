@@ -2,10 +2,12 @@
 
 use embedded_hal::blocking::i2c;
 
+pub mod configuration;
+
 pub const INA219_ADDR: u8 = 0x41;
 
 enum Register {
-    // Configuration = 0x00,
+    Configuration = 0x00,
     ShuntVoltage = 0x01,
     BusVoltage = 0x02,
     Power = 0x03,
@@ -27,13 +29,17 @@ impl<I2C, E> INA219<I2C>
         }
     }
 
+    pub fn configuration(&mut self) -> Result<configuration::Register, E> {
+        let bits = self.read(Register::Configuration)?;
+        Ok(configuration::Register::from_bits(bits))
+    }
+
+    pub fn set_configuratin(&mut self, conf: configuration::Register) -> Result<(), E> {
+        self.write(Register::Configuration, conf.as_bits())
+    }
+
     pub fn calibrate(&mut self, value: u16) -> Result<(), E> {
-        self.i2c.write(self.address, &[
-            Register::Calibration as u8,
-            (value >> 8) as u8,
-            value as u8
-        ])?;
-        Ok(())
+        self.write(Register::Calibration, value)
     }
 
     pub fn shunt_voltage(&mut self) -> Result<i16, E> {
@@ -61,5 +67,10 @@ impl<I2C, E> INA219<I2C>
         self.i2c.write(self.address, &[register as u8])?;
         self.i2c.read(self.address, &mut buf)?;
         Ok(u16::from_be_bytes(buf))
+    }
+
+    fn write(&mut self, register: Register, value: u16) -> Result<(), E> {
+        let [val0, val1] = value.to_be_bytes();
+        self.i2c.write(self.address, &[register as u8, val0, val1])
     }
 }
