@@ -17,8 +17,9 @@ pub struct Calibration {
 impl Calibration {
     /// Create a new calibration using the least significant bit (LSB) of the current register in µV
     /// and the value of the shunt resistor used in µOhm
+    #[must_use]
     pub fn new(current_lsb_ua: u32, r_shunt_uohm: u32) -> Option<Self> {
-        let product = current_lsb_ua as u64 * r_shunt_uohm as u64;
+        let product = u64::from(current_lsb_ua) * u64::from(r_shunt_uohm);
 
         if RANGE.contains(&product) {
             Some(Self {
@@ -31,21 +32,28 @@ impl Calibration {
     }
 
     /// Reconstruct the calibration from the value read from the calibration register
-    pub const fn from_bits(bits: u16, r_shunt_uohm: u32) -> Option<Self> {
+    #[must_use]
+    pub fn from_bits(bits: u16, r_shunt_uohm: u32) -> Option<Self> {
         if bits == 0 || r_shunt_uohm == 0 {
             return None;
         }
 
+        let current_lsb_ua =
+            u32::try_from(SCALING_FACTOR / (u64::from(bits) * u64::from(r_shunt_uohm))).ok()?;
+
         Some(Self {
-            current_lsb_ua: (SCALING_FACTOR / (bits as u64 * r_shunt_uohm as u64)) as u32,
+            current_lsb_ua,
             r_shunt_uohm,
         })
     }
 
     /// Turn this calibration into the bits that can be written to the calibration register
+    #[must_use]
     pub const fn as_bits(self) -> u16 {
         let cal = SCALING_FACTOR / (self.current_lsb_ua as u64 * self.r_shunt_uohm as u64);
 
+        // try_from is not const and we do the check manually
+        #[allow(clippy::cast_possible_truncation)]
         if cal >= 2 && cal <= u16::MAX as u64 {
             // According to Figure 27 of the datasheet the lowest bit is always 0
             (cal as u16) & !1
@@ -56,17 +64,20 @@ impl Calibration {
     }
 
     /// The value of the least significant bit in the current register in µV
+    #[must_use]
     pub const fn current_lsb_ua(self) -> u32 {
         self.current_lsb_ua
     }
 
     /// The value of the least significant bit in the power register in µW
+    #[must_use]
     pub const fn power_lsb_uw(self) -> u32 {
         20 * self.current_lsb_ua
     }
 
     /// The value of the shunt used in µOhm
-    pub fn r_shunt_uohm(self) -> u32 {
+    #[must_use]
+    pub const fn r_shunt_uohm(self) -> u32 {
         self.r_shunt_uohm
     }
 }

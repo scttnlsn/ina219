@@ -13,7 +13,7 @@
 //! };
 //! ```
 
-use core::ops::RangeInclusive;
+use core::ops::{RangeInclusive, RangeToInclusive};
 
 /// Perform a system reset or continue work as normal
 ///
@@ -65,6 +65,15 @@ impl BusVoltageRange {
     const SHIFT: u8 = 13;
     const MASK: u16 = 1;
 
+    /// The voltage range in Volts
+    #[must_use]
+    pub const fn range_v(self) -> RangeToInclusive<u16> {
+        match self {
+            BusVoltageRange::Fsr16v => ..=16,
+            BusVoltageRange::Fsr32v => ..=32,
+        }
+    }
+
     #[must_use]
     const fn from_register(reg: u16) -> Self {
         match (reg >> Self::SHIFT) & Self::MASK {
@@ -105,6 +114,7 @@ impl ShuntVoltageRange {
     const MASK: u16 = 0b11;
 
     /// Maximum range in mV for the shunt voltage measurement
+    #[must_use]
     pub const fn range_mv(self) -> RangeInclusive<i16> {
         match self {
             ShuntVoltageRange::Fsr40mv => -40..=40,

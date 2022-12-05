@@ -1,16 +1,30 @@
-#![warn(clippy::pedantic)]
-#![warn(clippy::missing_const_for_fn)]
-
+//! Types wrapping the measurements of the INA219
+//!
+//! These types help converting the ras register values into expressive values.
 use crate::calibration::Calibration;
-use crate::configuration::ShuntVoltageRange;
+use crate::configuration::{BusVoltageRange, ShuntVoltageRange};
 
 /// A collection of all the measurements collected by the INA219
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct Measurements {
+    /// Measured `BusVoltage`
     pub bus_voltage: BusVoltage,
+    /// Measured `ShuntVoltage`
     pub shunt_voltage: ShuntVoltage,
-    pub current: Current,
-    pub power: Power,
+    /// Power and current as calculated by the INA219 if there is a calibration and the math did
+    /// not overflow
+    pub current_power: Result<(Current, Power), MathErrors>,
+}
+
+/// Errors that can arise when current and power are calculated
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum MathErrors {
+    /// No calibration was provided, thus power and current can not be calculated
+    ///
+    /// (would require division by 0)
+    NoCalibration,
+    /// The INA219 reported a math overflow during the calculation
+    MathOverflow,
 }
 
 /// A shunt voltage measurement as read from the shunt voltage register
@@ -75,9 +89,21 @@ impl ShuntVoltage {
 pub struct BusVoltage(u16);
 
 impl BusVoltage {
-    /// Create `BusVoltage` from the contents of the register.
+    /// Create `BusVoltage` from the contents of the register checking that it is `range`.
     #[must_use]
-    pub const fn from_bits(bits: u16) -> Self {
+    pub const fn from_bits_with_range(bits: u16, range: BusVoltageRange) -> Option<Self> {
+        let new = Self(bits);
+
+        if new.voltage_mv() <= (range.range_v().end * 1000) {
+            Some(new)
+        } else {
+            None
+        }
+    }
+
+    /// Create `BusVoltage` from the contents of the register. Performing no range checks.
+    #[must_use]
+    pub const fn from_bits_unchecked(bits: u16) -> Self {
         Self(bits)
     }
 
@@ -117,6 +143,7 @@ impl BusVoltage {
     }
 }
 
+/// A power measurement performed by the INA219
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
 pub struct Power {
     power: i16,
@@ -151,6 +178,7 @@ impl Power {
     }
 }
 
+/// A current measurement performed by the INA219
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
 pub struct Current {
     current: i16,
@@ -230,12 +258,12 @@ mod tests {
 
     #[test]
     fn bus_voltage() {
-        let bv = BusVoltage::from_bits(0x1f40 << 3);
+        let bv = BusVoltage::from_bits_unchecked(0x1f40 << 3);
         assert_eq!(bv.voltage_mv(), 32_000);
         assert!(!bv.is_conversion_ready());
         assert!(!bv.has_math_overflowed());
 
-        let bv = BusVoltage::from_bits(((0x1f40 / 2) << 3) | 0b11);
+        let bv = BusVoltage::from_bits_unchecked(((0x1f40 / 2) << 3) | 0b11);
         assert_eq!(bv.voltage_mv(), 16_000);
         assert!(bv.is_conversion_ready());
         assert!(bv.has_math_overflowed());
