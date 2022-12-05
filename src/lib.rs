@@ -1,8 +1,10 @@
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 
 use embedded_hal::blocking::i2c;
 
+pub mod calibration;
 pub mod configuration;
+pub mod measurements;
 
 pub const INA219_ADDR: u8 = 0x41;
 
@@ -28,12 +30,12 @@ where
         INA219 { i2c, address }
     }
 
-    pub fn configuration(&mut self) -> Result<configuration::Register, E> {
+    pub fn configuration(&mut self) -> Result<configuration::Configuration, E> {
         let bits = self.read(Register::Configuration)?;
-        Ok(configuration::Register::from_bits(bits))
+        Ok(configuration::Configuration::from_bits(bits))
     }
 
-    pub fn set_configuratin(&mut self, conf: configuration::Register) -> Result<(), E> {
+    pub fn set_configuratin(&mut self, conf: configuration::Configuration) -> Result<(), E> {
         self.write(Register::Configuration, conf.as_bits())
     }
 

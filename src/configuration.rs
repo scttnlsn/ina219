@@ -5,13 +5,15 @@
 //! # Example
 //! The `..` completion can be used to set specific values to change. For example:
 //! ```rust
-//! use ina219::configuration::{Register, Resolution};
-//! let conf = Register {
+//! use ina219::configuration::{Configuration, Resolution};
+//! let conf = Configuration {
 //!     bus_resolution: Resolution::Avg128,
 //!     shunt_resolution: Resolution::Avg128,
 //!     .. Default::default()
 //! };
 //! ```
+
+use core::ops::RangeInclusive;
 
 /// Perform a system reset or continue work as normal
 ///
@@ -101,6 +103,16 @@ pub enum ShuntVoltageRange {
 impl ShuntVoltageRange {
     const SHIFT: u8 = 11;
     const MASK: u16 = 0b11;
+
+    /// Maximum range in mV for the shunt voltage measurement
+    pub const fn range_mv(self) -> RangeInclusive<i16> {
+        match self {
+            ShuntVoltageRange::Fsr40mv => -40..=40,
+            ShuntVoltageRange::Fsr80mv => -80..=80,
+            ShuntVoltageRange::Fsr160mv => -160..=160,
+            ShuntVoltageRange::Fsr320mv => -320..=320,
+        }
+    }
 
     #[must_use]
     const fn from_register(reg: u16) -> Self {
@@ -311,7 +323,7 @@ impl Default for OperatingMode {
 ///
 /// Configures the way the INA219 performs its measurements.
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
-pub struct Register {
+pub struct Configuration {
     /// Indicate to perform a reset or continue to run normally
     pub reset: Reset,
     /// Maximum measurement range for the bus voltage
@@ -326,7 +338,7 @@ pub struct Register {
     pub operating_mode: OperatingMode,
 }
 
-impl Register {
+impl Configuration {
     /// Turn the bits describing the configuration into a `Register`
     #[must_use]
     pub const fn from_bits(reg: u16) -> Self {
@@ -378,8 +390,11 @@ mod tests {
     fn default_matches_datasheet() {
         let reset_value = 0b0011_1001_1001_1111;
 
-        assert_eq!(Register::default().as_bits(), reset_value);
-        assert_eq!(Register::from_bits(reset_value), Register::default());
+        assert_eq!(Configuration::default().as_bits(), reset_value);
+        assert_eq!(
+            Configuration::from_bits(reset_value),
+            Configuration::default()
+        );
     }
 
     #[test]
@@ -390,14 +405,14 @@ mod tests {
 
         // Interestingly it is quite fast to check all 2^16 patterns...
         for val in 0..=u16::MAX {
-            let register = Register::from_bits(val);
+            let register = Configuration::from_bits(val);
             let bits_cleaned = register.as_bits();
-            assert_eq!(register, Register::from_bits(bits_cleaned));
+            assert_eq!(register, Configuration::from_bits(bits_cleaned));
 
             if register.shunt_resolution != Resolution::Res12Bit
                 && register.bus_resolution != Resolution::Res12Bit
             {
-                // Ignore both *ADC3 bits and the unused bits as they are (sometimes don't care)
+                // Ignore both *ADC3 bits and the unused bits as they are (sometimes) don't care
                 let bits_to_ignore = 0b0100_0010_0010_0000;
 
                 assert_eq!(val | bits_to_ignore, bits_cleaned | bits_to_ignore);
