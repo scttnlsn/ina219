@@ -1,12 +1,11 @@
-extern crate ina219;
-extern crate linux_embedded_hal as hal;
-
 use hal::I2cdev;
-use ina219::{INA219, INA219_ADDR};
+use ina219::address::{Address, Pin};
+use ina219::INA219;
+use linux_embedded_hal as hal;
 
 fn main() {
     let device = I2cdev::new("/dev/i2c-1").unwrap();
-    let mut ina = INA219::new(device, INA219_ADDR).unwrap();
+    let mut ina = INA219::new(device, Address::from_pins(Pin::Gnd, Pin::Gnd)).unwrap();
 
     ina.calibrate(0x0100).unwrap();
 

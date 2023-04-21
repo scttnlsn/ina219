@@ -5,19 +5,19 @@
 
 //! TODO: crate level docs
 
+extern crate alloc;
+
 use crate::measurements::{Current, MathErrors, Measurements, Power};
 use configuration::{Configuration, Reset};
 use embedded_hal::blocking::i2c;
 use measurements::{BusVoltage, ShuntVoltage};
 
+pub mod address;
 mod calibration;
 pub mod configuration;
 pub mod measurements;
 
 pub use calibration::Calibration;
-
-/// TODO: Replace with struct that handles pins
-pub const INA219_ADDR: u8 = 0x41;
 
 /// Addresses of the internal registers of the INA219
 ///
@@ -79,7 +79,7 @@ impl<E> From<E> for MeasurementError<E> {
 /// Embedded HAL compatible driver for the INA219
 pub struct INA219<I2C> {
     i2c: I2C,
-    address: u8,
+    address: address::Address,
     config: Configuration,
     calib: Option<Calibration>,
 }
@@ -92,7 +92,7 @@ where
     ///
     /// # Errors
     /// If the device returns an unexpected response a `InitializationError` is returned.
-    pub fn new(i2c: I2C, address: u8) -> Result<Self, InitializationError<E>> {
+    pub fn new(i2c: I2C, address: address::Address) -> Result<Self, InitializationError<E>> {
         let mut new = Self::new_unchecked(i2c, address, Configuration::default());
 
         new.reset()?;
@@ -131,7 +131,11 @@ where
     }
 
     /// Create a new `INA219` without performing a reset or checking registers for consistency
-    pub const fn new_unchecked(i2c: I2C, address: u8, config: Configuration) -> INA219<I2C> {
+    pub const fn new_unchecked(
+        i2c: I2C,
+        address: address::Address,
+        config: Configuration,
+    ) -> INA219<I2C> {
         INA219 {
             i2c,
             address,
@@ -267,13 +271,14 @@ where
     /// Returns an error if the underlying I2C device returns an error.
     pub fn read_raw(&mut self, register: Register) -> Result<u16, E> {
         let mut buf: [u8; 2] = [0x00; 2];
-        self.i2c.write(self.address, &[register as u8])?;
-        self.i2c.read(self.address, &mut buf)?;
+        self.i2c.write(self.address.as_byte(), &[register as u8])?;
+        self.i2c.read(self.address.as_byte(), &mut buf)?;
         Ok(u16::from_be_bytes(buf))
     }
 
     fn write(&mut self, register: Register, value: u16) -> Result<(), E> {
         let [val0, val1] = value.to_be_bytes();
-        self.i2c.write(self.address, &[register as u8, val0, val1])
+        self.i2c
+            .write(self.address.as_byte(), &[register as u8, val0, val1])
     }
 }
