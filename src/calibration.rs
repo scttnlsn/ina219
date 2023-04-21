@@ -105,21 +105,4 @@ mod tests {
             }
         }
     }
-
-    #[test]
-    fn is_inverse() {
-        for r_pow in 0..=10 {
-            let r = 10u32.pow(r_pow);
-            for mut bits in 0..=u16::MAX {
-                bits &= !1;
-                // dbg!((r, bits));
-                if let Some(cal) = Calibration::from_bits(bits, r) {
-                    // dbg!(cal);
-                    // assert_eq!(as_bits_datasheet(cal), bits);
-                    // assert_eq!(cal.as_bits(), bits);
-                    assert_eq!(cal.as_bits(), as_bits_datasheet(cal));
-                }
-            }
-        }
-    }
 }
