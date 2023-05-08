@@ -1,22 +1,22 @@
-#![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(any(test, feature = "std")), no_std)]
 #![warn(clippy::pedantic)]
 #![warn(clippy::missing_const_for_fn)]
 #![warn(missing_docs)]
 
 //! TODO: crate level docs
 
-extern crate alloc;
-
-use crate::measurements::{Current, MathErrors, Measurements, Power};
+use crate::measurements::{CurrentRegister, Measurements, PowerRegister};
 use configuration::{Configuration, Reset};
+use core::fmt::{Debug, Display, Formatter};
 use embedded_hal::blocking::i2c;
 use measurements::{BusVoltage, ShuntVoltage};
 
 pub mod address;
-mod calibration;
+pub mod calibration;
 pub mod configuration;
 pub mod measurements;
 
+use crate::calibration::UnCalibrated;
 pub use calibration::Calibration;
 
 /// Addresses of the internal registers of the INA219
@@ -59,6 +59,38 @@ impl<E> From<E> for InitializationError<E> {
     }
 }
 
+#[cfg(feature = "std")]
+impl<I2cErr> std::error::Error for InitializationError<I2cErr>
+where
+    I2cErr: Debug + std::error::Error + 'static,
+{
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::I2cError(err) => Some(err),
+            Self::ConfigurationNotDefaultAfterReset
+            | Self::BusVoltageOutOfRange
+            | Self::RegisterNotZeroAfterReset(_)
+            | Self::ShuntVoltageOutOfRange => None,
+        }
+    }
+}
+
+impl<I2cErr: Debug> Display for InitializationError<I2cErr> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::I2cError(err) => write!(f, "I2C error: {err:?}"),
+            Self::ConfigurationNotDefaultAfterReset => {
+                write!(f, "Configuration was not default after reset")
+            }
+            Self::RegisterNotZeroAfterReset(reg) => {
+                write!(f, "Register {reg:?} was not zero after reset")
+            }
+            Self::ShuntVoltageOutOfRange => write!(f, "Shunt voltage was out of range"),
+            Self::BusVoltageOutOfRange => write!(f, "Bus voltage was out of range"),
+        }
+    }
+}
+
 /// Errors that can happen when a measurement is read
 #[derive(Debug, Copy, Clone)]
 pub enum MeasurementError<I2cErr> {
@@ -68,6 +100,8 @@ pub enum MeasurementError<I2cErr> {
     ShuntVoltageOutOfRange,
     /// The bus voltage was outside of the range given by the last set configuration
     BusVoltageOutOfRange,
+    /// The INA219 reported a math overflow for the given bus and shunt voltage
+    MathOverflow(Measurements<(), ()>),
 }
 
 impl<E> From<E> for MeasurementError<E> {
@@ -76,39 +110,87 @@ impl<E> From<E> for MeasurementError<E> {
     }
 }
 
+#[cfg(feature = "std")]
+impl<I2cErr> std::error::Error for MeasurementError<I2cErr>
+where
+    I2cErr: Debug + std::error::Error + 'static,
+{
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::I2cError(err) => Some(err),
+            Self::BusVoltageOutOfRange | Self::ShuntVoltageOutOfRange | Self::MathOverflow(_) => {
+                None
+            }
+        }
+    }
+}
+
+impl<I2cErr: Debug> Display for MeasurementError<I2cErr> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::I2cError(err) => write!(f, "I2C error: {err:?}"),
+            Self::ShuntVoltageOutOfRange => write!(f, "Shunt voltage was out of range"),
+            Self::BusVoltageOutOfRange => write!(f, "Bus voltage was out of range"),
+            Self::MathOverflow(Measurements {
+                shunt_voltage,
+                bus_voltage,
+                ..
+            }) => write!(
+                f,
+                "Math overflow for shunt voltage {shunt_voltage:?} and bus voltage {bus_voltage:?}"
+            ),
+        }
+    }
+}
+
 /// Embedded HAL compatible driver for the INA219
-pub struct INA219<I2C> {
+pub struct INA219<I2C, Calib> {
     i2c: I2C,
     address: address::Address,
     config: Configuration,
-    calib: Option<Calibration>,
+    calib: Calib,
 }
 
-impl<I2C, E> INA219<I2C>
+impl<I2C, E, Calib> INA219<I2C, Calib>
 where
     I2C: i2c::Write<Error = E> + i2c::Read<Error = E>,
+    Calib: Calibration,
 {
     /// Open an INA219, perform a reset and check all register values are in the expected ranges
     ///
     /// # Errors
     /// If the device returns an unexpected response a `InitializationError` is returned.
-    pub fn new(i2c: I2C, address: address::Address) -> Result<Self, InitializationError<E>> {
-        let mut new = Self::new_unchecked(i2c, address, Configuration::default());
+    pub fn new(
+        i2c: I2C,
+        address: address::Address,
+        calibration: Calib,
+    ) -> Result<Self, InitializationError<E>> {
+        let mut new = INA219::new_unchecked(i2c, address, Configuration::default(), calibration);
 
         new.reset()?;
 
-        // TODO: Do we need to wait here?
+        // We retry reading the configuration in case the device did not finish the reset yet
+        let mut attempt = 0;
+        loop {
+            if new.configuration()? == Configuration::default() {
+                break;
+            }
 
-        if new.configuration()? != Configuration::default() {
-            return Err(InitializationError::ConfigurationNotDefaultAfterReset);
+            if attempt > 10 {
+                return Err(InitializationError::ConfigurationNotDefaultAfterReset);
+            }
+
+            attempt += 1;
         }
 
+        // Check that all calculated registers read zero after reset
         for reg in [Register::Calibration, Register::Current, Register::Power] {
             if new.read_raw(reg)? != 0 {
                 return Err(InitializationError::RegisterNotZeroAfterReset(reg));
             }
         }
 
+        // Check that the shunt voltage is in range
         if ShuntVoltage::from_bits_with_range(
             new.read_raw(Register::ShuntVoltage)?,
             Configuration::default().shunt_voltage_range,
@@ -118,6 +200,7 @@ where
             return Err(InitializationError::ShuntVoltageOutOfRange);
         }
 
+        // Check that the bus voltage is in range
         if BusVoltage::from_bits_with_range(
             new.read_raw(Register::BusVoltage)?,
             Configuration::default().bus_voltage_range,
@@ -125,6 +208,12 @@ where
         .is_none()
         {
             return Err(InitializationError::BusVoltageOutOfRange);
+        }
+
+        // Calibrate the device
+        let bits = new.calib.register_bits();
+        if bits != 0 {
+            new.calibrate_raw(bits)?;
         }
 
         Ok(new)
@@ -135,12 +224,13 @@ where
         i2c: I2C,
         address: address::Address,
         config: Configuration,
-    ) -> INA219<I2C> {
+        calib: Calib,
+    ) -> Self {
         INA219 {
             i2c,
             address,
             config,
-            calib: None,
+            calib,
         }
     }
 
@@ -187,7 +277,12 @@ where
     ///
     /// # Errors
     /// Returns Err() when the underlying I2C device returns an error.
-    pub fn calibrate(&mut self, value: u16) -> Result<(), E> {
+    pub fn calibrate(&mut self, value: Calib) -> Result<(), E> {
+        self.calib = value;
+        self.calibrate_raw(self.calib.register_bits())
+    }
+
+    fn calibrate_raw(&mut self, value: u16) -> Result<(), E> {
         self.write(Register::Calibration, value)
     }
 
@@ -198,7 +293,9 @@ where
     /// # Errors
     /// Returns an error if the underlying I2C device returns an error or when any of the
     /// measurements is outside of their expected ranges.
-    pub fn next_measurement(&mut self) -> Result<Option<Measurements>, MeasurementError<E>> {
+    pub fn next_measurement(
+        &mut self,
+    ) -> Result<Option<Measurements<Calib::Current, Calib::Power>>, MeasurementError<E>> {
         let bus_voltage = self.bus_voltage()?;
         if !bus_voltage.is_conversion_ready() {
             // No new data... nothing to do...
@@ -208,22 +305,24 @@ where
         // Reset conversion ready flag
         let power = self.power_raw()?;
 
-        let current_power = match (bus_voltage.has_math_overflowed(), self.calib) {
-            (true, _) => Err(MathErrors::MathOverflow),
-            (_, None) => Err(MathErrors::NoCalibration),
-            (false, Some(calib)) => {
-                let current = self.current_raw()?;
-                Ok((
-                    Current::from_bits_and_cal(current, calib),
-                    Power::from_bits_and_cal(power, calib),
-                ))
-            }
-        };
+        let shunt_voltage = self.shunt_voltage()?;
+
+        if bus_voltage.has_math_overflowed() {
+            return Err(MeasurementError::MathOverflow(Measurements {
+                bus_voltage,
+                shunt_voltage,
+                current: (),
+                power: (),
+            }));
+        }
+
+        let current = self.current_raw()?;
 
         Ok(Some(Measurements {
             bus_voltage,
-            shunt_voltage: self.shunt_voltage()?,
-            current_power,
+            shunt_voltage,
+            current: self.calib.current_from_register(current),
+            power: self.calib.power_from_register(power),
         }))
     }
 
@@ -253,16 +352,18 @@ where
     ///
     /// # Errors
     /// Returns an error if the underlying I2C device returns an error.
-    pub fn power_raw(&mut self) -> Result<u16, E> {
-        self.read_raw(Register::Power)
+    pub fn power_raw(&mut self) -> Result<PowerRegister, E> {
+        let bits = self.read_raw(Register::Power)?;
+        Ok(PowerRegister(bits))
     }
 
     /// Read the last measured current
     ///
     /// # Errors
     /// Returns an error if the underlying I2C device returns an error.
-    pub fn current_raw(&mut self) -> Result<u16, E> {
-        self.read_raw(Register::Current)
+    pub fn current_raw(&mut self) -> Result<CurrentRegister, E> {
+        let bits = self.read_raw(Register::Current)?;
+        Ok(CurrentRegister(bits))
     }
 
     /// Read the raw contents of a [`Register`]

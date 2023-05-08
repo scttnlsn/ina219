@@ -6,23 +6,20 @@ use crate::configuration::{BusVoltageRange, ShuntVoltageRange};
 
 /// A collection of all the measurements collected by the INA219
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub struct Measurements {
+pub struct Measurements<Current, Power> {
     /// Measured `BusVoltage`
     pub bus_voltage: BusVoltage,
     /// Measured `ShuntVoltage`
     pub shunt_voltage: ShuntVoltage,
-    /// Power and current as calculated by the INA219 if there is a calibration and the math did
-    /// not overflow
-    pub current_power: Result<(Current, Power), MathErrors>,
+    /// Measured `Current`
+    pub current: Current,
+    /// Measured `Power`
+    pub power: Power,
 }
 
 /// Errors that can arise when current and power are calculated
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum MathErrors {
-    /// No calibration was provided, thus power and current can not be calculated
-    ///
-    /// (would require division by 0)
-    NoCalibration,
     /// The INA219 reported a math overflow during the calculation
     MathOverflow,
 }
@@ -143,79 +140,16 @@ impl BusVoltage {
     }
 }
 
-/// A power measurement performed by the INA219
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
-pub struct Power {
-    power: i16,
-    power_lsb_uw: u32,
-}
+pub struct CurrentRegister(pub u16);
 
-impl Power {
-    /// Generate a `Power` reading from the register bits and the calibration that was used
-    #[must_use]
-    pub const fn from_bits_and_cal(bits: u16, calibration: Calibration) -> Self {
-        Self {
-            power: i16::from_ne_bytes(bits.to_ne_bytes()),
-            power_lsb_uw: calibration.power_lsb_uw(),
-        }
-    }
-
-    /// Try to get the measured current in µW as a `i32`
-    ///
-    /// Returns `None` if the calculation overflowed.
-    #[must_use]
-    pub fn try_current_ua_i32(self) -> Option<i32> {
-        i32::checked_mul(
-            i32::from(self.power),
-            i32::try_from(self.power_lsb_uw).ok()?,
-        )
-    }
-
-    /// Get the measured current in µA as an `i64` which can not overflow
-    #[must_use]
-    pub fn current_ua_i64(self) -> i64 {
-        i64::from(self.power) * i64::from(self.power_lsb_uw)
-    }
-}
-
-/// A current measurement performed by the INA219
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
-pub struct Current {
-    current: i16,
-    current_lsb_ua: u32,
-}
-
-impl Current {
-    /// Generate a `Current` reading from the register bits and the calibration that was used
-    #[must_use]
-    pub const fn from_bits_and_cal(bits: u16, calibration: Calibration) -> Self {
-        Self {
-            current: i16::from_ne_bytes(bits.to_ne_bytes()),
-            current_lsb_ua: calibration.current_lsb_ua(),
-        }
-    }
-
-    /// Try to get the measured current in µA as a `i32`
-    ///
-    /// Returns `None` if the calculation overflowed.
-    #[must_use]
-    pub fn try_current_ua_i32(self) -> Option<i32> {
-        i32::checked_mul(
-            i32::from(self.current),
-            i32::try_from(self.current_lsb_ua).ok()?,
-        )
-    }
-
-    /// Get the measured current in µA as an `i64` which can not overflow
-    #[must_use]
-    pub fn current_ua_i64(self) -> i64 {
-        i64::from(self.current) * i64::from(self.current_lsb_ua)
-    }
-}
+pub struct PowerRegister(pub u16);
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::calibration::{IntCalibration, MicroAmpere};
 
     #[test]
     fn shunt_voltage() {
@@ -271,19 +205,16 @@ mod tests {
 
     #[test]
     fn current() {
-        let calib = Calibration::new(1, 1_000_000).unwrap();
+        let calib = IntCalibration::new(MicroAmpere(1), 1_000_000).unwrap();
 
-        let c = Current::from_bits_and_cal(0xFFFF, calib);
-        assert_eq!(c.current_ua_i64(), -1);
+        let c = calib.current_from_register(CurrentRegister(0xFFFF));
+        assert_eq!(c.0, -1);
 
-        let c = Current::from_bits_and_cal(1, calib);
-        assert_eq!(c.current_ua_i64(), 1);
+        let c = calib.current_from_register(CurrentRegister(1));
+        assert_eq!(c.0, 1);
 
-        let calib = Calibration::new(u32::MAX, 1).unwrap();
-        let c = Current::from_bits_and_cal(i16::MAX as u16, calib);
-        assert_eq!(
-            c.current_ua_i64(),
-            i64::from(i16::MAX) * i64::from(u32::MAX)
-        );
+        let calib = IntCalibration::new(MicroAmpere(i64::from(u32::MAX)), 1).unwrap();
+        let c = calib.current_from_register(CurrentRegister(i16::MAX as u16));
+        assert_eq!(i64::from(c.0), i64::from(i16::MAX) * i64::from(u32::MAX));
     }
 }

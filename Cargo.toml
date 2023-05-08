@@ -8,6 +8,9 @@ repository = "https://github.com/scttnlsn/ina219"
 authors = ["Scott Nelson <scott@scottnelson.co>"]
 license = "MIT/Apache-2.0"
 
+[features]
+default = []
+std = []
 
 [dependencies]
 embedded-hal = "0.2"
