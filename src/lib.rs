@@ -20,9 +20,9 @@ pub use calibration::Calibration;
 
 /// Addresses of the internal registers of the INA219
 ///
-/// See [`INA219::read()`]
+/// See [`INA219::read_raw()`]
 #[derive(Debug, Copy, Clone)]
-pub enum Register {
+enum Register {
     /// Configuration register, see [`Configuration`]
     Configuration = 0x00,
     /// Shunt voltage register, see [`ShuntVoltage`]
@@ -37,6 +37,19 @@ pub enum Register {
     Calibration = 0x05,
 }
 
+impl Register {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Configuration => "Configuration",
+            Self::ShuntVoltage => "ShuntVoltage",
+            Self::BusVoltage => "BusVoltage",
+            Self::Power => "Power",
+            Self::Current => "Current",
+            Self::Calibration => "Calibration",
+        }
+    }
+}
+
 /// Error conditions that can appear during initialization
 #[derive(Debug, Copy, Clone)]
 pub enum InitializationError<I2cErr> {
@@ -45,7 +58,7 @@ pub enum InitializationError<I2cErr> {
     /// The configuration was not the default value after a reset
     ConfigurationNotDefaultAfterReset,
     /// A register was not zero when it was expected to be after reset
-    RegisterNotZeroAfterReset(Register),
+    RegisterNotZeroAfterReset(&'static str),
     /// The shunt voltage value was not in the range expected after a reset
     ShuntVoltageOutOfRange,
     /// The bus voltage value was not in the range expected after a reset
@@ -185,7 +198,7 @@ where
         // Check that all calculated registers read zero after reset
         for reg in [Register::Calibration, Register::Current, Register::Power] {
             if new.read_raw(reg)? != 0 {
-                return Err(InitializationError::RegisterNotZeroAfterReset(reg));
+                return Err(InitializationError::RegisterNotZeroAfterReset(reg.name()));
             }
         }
 
@@ -375,7 +388,7 @@ where
     ///
     /// # Errors
     /// Returns an error if the underlying I2C device returns an error.
-    pub fn read_raw(&mut self, register: Register) -> Result<u16, E> {
+    fn read_raw(&mut self, register: Register) -> Result<u16, E> {
         let mut buf: [u8; 2] = [0x00; 2];
         self.i2c.write(self.address.as_byte(), &[register as u8])?;
         self.i2c.read(self.address.as_byte(), &mut buf)?;

@@ -159,7 +159,7 @@ pub struct OutOfRange {
 }
 
 impl core::fmt::Display for OutOfRange {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
             "AddressOutOfRange: {:x}, should be in range: {:x}..={:x}",

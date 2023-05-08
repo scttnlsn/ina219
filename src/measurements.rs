@@ -3,6 +3,9 @@
 //! These types help converting the ras register values into expressive values.
 use crate::configuration::{BusVoltageRange, ShuntVoltageRange};
 
+#[cfg(doc)]
+use crate::configuration::OperatingMode::{AdcOff, PowerDown};
+
 /// A collection of all the measurements collected by the INA219
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct Measurements<Current, Power> {
@@ -58,8 +61,8 @@ impl ShuntVoltage {
     /// Get the shunt voltage in 10µV, this is the resolution used by the INA219.
     ///
     /// See also:
-    /// * [`shunt_voltage_uv`] for measurement in µV
-    /// * [`shunt_voltage_mv`] for measurement in mV
+    /// * [`Self::shunt_voltage_uv`] for measurement in µV
+    /// * [`Self::shunt_voltage_mv`] for measurement in mV
     #[must_use]
     pub const fn shunt_voltage_10uv(self) -> i16 {
         self.0
@@ -124,7 +127,7 @@ impl BusVoltage {
     ///
     /// The flag is set when a conversion finished.
     /// The flag is cleared if:
-    /// * The operation mode of the configuration register is written (except for [`PowerDone`] or [`AdcOff`])
+    /// * The operation mode of the configuration register is written (except for [`PowerDown`] or [`AdcOff`])
     /// * The power register was read
     #[must_use]
     pub const fn is_conversion_ready(self) -> bool {

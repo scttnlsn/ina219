@@ -1,6 +1,6 @@
 //! Types used to set the configuration for the INA219
 //!
-//! [`Register`] combines all the needed values for a register write.
+//! [`Configuration`] combines all the needed values for a register write.
 //!
 //! # Example
 //! The `..` completion can be used to set specific values to change. For example:
