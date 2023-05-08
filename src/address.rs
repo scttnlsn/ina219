@@ -112,16 +112,17 @@ impl Address {
     /// assert_eq!(address.as_byte(), 0b100_1011);
     /// ```
     ///
-    /// This will return `None` if the byte does not represent a valid address.
+    /// # Errors
+    /// This will return `Err` if the byte does not represent a valid address.
     /// ```rust
     /// # use ina219::address::{Address, Pin};
     ///
     /// assert!(Address::from_byte(42).is_none());
     /// ```
-    pub const fn from_byte(byte: u8) -> Result<Self, AddressOutOfRange> {
+    pub const fn from_byte(byte: u8) -> Result<Self, OutOfRange> {
         match byte {
             Self::MIN_ADDRESS..=Self::MAX_ADDRESS => Ok(Self { byte }),
-            which => Err(AddressOutOfRange { which }),
+            which => Err(OutOfRange { which }),
         }
     }
 
@@ -151,12 +152,13 @@ impl Address {
     }
 }
 
+/// The given address was not in the expected range for an INA219
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub struct AddressOutOfRange {
+pub struct OutOfRange {
     which: u8,
 }
 
-impl core::fmt::Display for AddressOutOfRange {
+impl core::fmt::Display for OutOfRange {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -169,7 +171,7 @@ impl core::fmt::Display for AddressOutOfRange {
 }
 
 impl TryFrom<u8> for Address {
-    type Error = AddressOutOfRange;
+    type Error = OutOfRange;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         Address::from_byte(value)
@@ -177,7 +179,7 @@ impl TryFrom<u8> for Address {
 }
 
 #[cfg(feature = "std")]
-impl std::error::Error for AddressOutOfRange {}
+impl std::error::Error for OutOfRange {}
 
 #[cfg(test)]
 mod tests {

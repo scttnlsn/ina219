@@ -16,7 +16,6 @@ pub mod calibration;
 pub mod configuration;
 pub mod measurements;
 
-use crate::calibration::UnCalibrated;
 pub use calibration::Calibration;
 
 /// Addresses of the internal registers of the INA219
@@ -293,6 +292,8 @@ where
     /// # Errors
     /// Returns an error if the underlying I2C device returns an error or when any of the
     /// measurements is outside of their expected ranges.
+    #[allow(clippy::type_complexity)] // TODO:
+                                      // Remove when https://github.com/rust-lang/rust/issues/8995 is resolved
     pub fn next_measurement(
         &mut self,
     ) -> Result<Option<Measurements<Calib::Current, Calib::Power>>, MeasurementError<E>> {
@@ -316,7 +317,11 @@ where
             }));
         }
 
-        let current = self.current_raw()?;
+        let current = if Calib::READ_CURRENT {
+            self.current_raw()?
+        } else {
+            CurrentRegister(0)
+        };
 
         Ok(Some(Measurements {
             bus_voltage,

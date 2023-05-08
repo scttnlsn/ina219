@@ -1,7 +1,6 @@
 //! Types wrapping the measurements of the INA219
 //!
 //! These types help converting the ras register values into expressive values.
-use crate::calibration::Calibration;
 use crate::configuration::{BusVoltageRange, ShuntVoltageRange};
 
 /// A collection of all the measurements collected by the INA219
@@ -140,16 +139,18 @@ impl BusVoltage {
     }
 }
 
+/// The raw value read from the current register
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
 pub struct CurrentRegister(pub u16);
 
+/// The raw value read from the power register
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
 pub struct PowerRegister(pub u16);
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::calibration::{IntCalibration, MicroAmpere};
+    use crate::calibration::{Calibration, IntCalibration, MicroAmpere};
 
     #[test]
     fn shunt_voltage() {
@@ -187,7 +188,9 @@ mod tests {
         }
 
         assert!(ShuntVoltage::from_bits(32001).is_none());
-        assert!(ShuntVoltage::from_bits((-32001i16) as u16).is_none()); // -320.01 mV
+
+        // -320.01 mV
+        assert!(ShuntVoltage::from_bits(u16::from_ne_bytes(i16::to_ne_bytes(-32001))).is_none());
     }
 
     #[test]
@@ -215,6 +218,6 @@ mod tests {
 
         let calib = IntCalibration::new(MicroAmpere(i64::from(u32::MAX)), 1).unwrap();
         let c = calib.current_from_register(CurrentRegister(i16::MAX as u16));
-        assert_eq!(i64::from(c.0), i64::from(i16::MAX) * i64::from(u32::MAX));
+        assert_eq!(c.0, i64::from(i16::MAX) * i64::from(u32::MAX));
     }
 }
