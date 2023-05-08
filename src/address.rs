@@ -3,6 +3,9 @@
 //! The address is set via the pins A0 and A1. The exact mapping can be seen in table 1 of the
 //! datasheet. The address can be set either as a byte or as two [pins](Pin).
 
+use core::fmt::Formatter;
+use core::ops::RangeInclusive;
+
 /// Names of the signal an address pin is connected to
 ///
 /// The values match the bits as used for addressing the INA219. See table 1 of the datasheet for
@@ -17,9 +20,13 @@
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[repr(u8)]
 pub enum Pin {
+    /// The pin is connected to GND
     Gnd = 0,
+    /// The pin is connected to Vcc
     Vcc = 1,
+    /// The pin is connected to SDA
     Sda = 2,
+    /// The pin is connected to SCL
     Scl = 3,
 }
 
@@ -72,6 +79,10 @@ pub struct Address {
 }
 
 impl Address {
+    const VALID_ADDRESS: RangeInclusive<u8> = 0b100_0000..=0b100_1111;
+    const MIN_ADDRESS: u8 = *Self::VALID_ADDRESS.start();
+    const MAX_ADDRESS: u8 = *Self::VALID_ADDRESS.end();
+
     /// Create an address from the two pins A0 and A1
     ///
     /// # Example
@@ -107,11 +118,10 @@ impl Address {
     ///
     /// assert!(Address::from_byte(42).is_none());
     /// ```
-    #[must_use]
-    pub const fn from_byte(byte: u8) -> Option<Self> {
+    pub const fn from_byte(byte: u8) -> Result<Self, AddressOutOfRange> {
         match byte {
-            0b100_0000..=0b100_1111 => Some(Self { byte }),
-            _ => None,
+            Self::MIN_ADDRESS..=Self::MAX_ADDRESS => Ok(Self { byte }),
+            which => Err(AddressOutOfRange { which }),
         }
     }
 
@@ -141,11 +151,37 @@ impl Address {
     }
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct AddressOutOfRange {
+    which: u8,
+}
+
+impl core::fmt::Display for AddressOutOfRange {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "AddressOutOfRange: {:x}, should be in range: {:x}..={:x}",
+            self.which,
+            Address::MIN_ADDRESS,
+            Address::MAX_ADDRESS,
+        )
+    }
+}
+
+impl TryFrom<u8> for Address {
+    type Error = AddressOutOfRange;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Address::from_byte(value)
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for AddressOutOfRange {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::vec;
-    use alloc::vec::Vec;
 
     #[test]
     fn is_pin_reversible() {
