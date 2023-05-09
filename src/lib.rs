@@ -22,6 +22,9 @@ pub mod configuration;
 pub mod errors;
 pub mod measurements;
 
+#[cfg(test)]
+mod tests;
+
 /// Addresses of the internal registers of the INA219
 ///
 /// See [`INA219::read_raw()`]
@@ -64,7 +67,7 @@ pub struct INA219<I2C, Calib> {
 
 impl<I2C, E, Calib> INA219<I2C, Calib>
 where
-    I2C: i2c::Write<Error = E> + i2c::Read<Error = E>,
+    I2C: i2c::Write<Error = E> + i2c::WriteRead<Error = E>,
     Calib: Calibration,
 {
     /// Open an INA219, perform a reset and check all register values are in the expected ranges
@@ -145,6 +148,12 @@ where
             config,
             calib,
         }
+    }
+
+    /// Destroy the driver returning the underlying I2C device
+    #[allow(clippy::missing_const_for_fn)]
+    pub fn destroy(self) -> I2C {
+        self.i2c
     }
 
     /// Perform a power-on-reset
@@ -312,8 +321,8 @@ where
     /// Returns an error if the underlying I2C device returns an error.
     fn read_raw(&mut self, register: Register) -> Result<u16, E> {
         let mut buf: [u8; 2] = [0x00; 2];
-        self.i2c.write(self.address.as_byte(), &[register as u8])?;
-        self.i2c.read(self.address.as_byte(), &mut buf)?;
+        self.i2c
+            .write_read(self.address.as_byte(), &[register as u8], &mut buf)?;
         Ok(u16::from_be_bytes(buf))
     }
 

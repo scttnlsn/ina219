@@ -17,4 +17,4 @@ embedded-hal = "0.2"
 
 [dev-dependencies]
 linux-embedded-hal = "0.3.2"
-embedded-hal-mock = "0.8.0"
+embedded-hal-mock = "0.9.0"

@@ -73,7 +73,7 @@ impl Pin {
 ///
 /// assert!(Address::from_byte(42).is_none());
 /// ```
-#[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct Address {
     byte: u8,
 }
@@ -149,6 +149,12 @@ impl Address {
             Pin::from_lowest_bits(self.byte),
             Pin::from_lowest_bits(self.byte >> 2),
         )
+    }
+}
+
+impl Default for Address {
+    fn default() -> Self {
+        Self::from_pins(Pin::Gnd, Pin::Gnd)
     }
 }
 

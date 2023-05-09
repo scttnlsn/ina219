@@ -85,6 +85,7 @@ impl IntCalibration {
     /// and the value of the shunt resistor used in µOhm
 
     // TODO: Add nicer error
+    // TODO: Handle error introduced during calculation...
     #[must_use]
     pub fn new(current_lsb: MicroAmpere, r_shunt_uohm: u32) -> Option<Self> {
         if current_lsb.0 < 0 {
