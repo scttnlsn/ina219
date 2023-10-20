@@ -1,6 +1,7 @@
 //! Types and trait to calibrate the INA219
 
 use crate::measurements::{CurrentRegister, PowerRegister};
+use crate::register::{ReadRegister, Register, WriteRegister};
 use core::ops::RangeInclusive;
 
 /// Trait describing a calibration for the INA219
@@ -43,6 +44,22 @@ impl<T: Calibration> Calibration for Option<T> {
 
     fn power_from_register(&self, reg: PowerRegister) -> Self::Power {
         self.as_ref().map(|cal| cal.power_from_register(reg))
+    }
+}
+
+impl<C> Register for C
+where
+    C: Calibration,
+{
+    const ADDRESS: u8 = 5;
+}
+
+impl<C> WriteRegister for C
+where
+    C: Calibration,
+{
+    fn as_bits(&self) -> u16 {
+        C::register_bits(self)
     }
 }
 
@@ -171,7 +188,7 @@ impl Calibration for IntCalibration {
     type Power = MicroWatt;
 
     fn register_bits(&self) -> u16 {
-        self.as_bits()
+        Self::as_bits(*self)
     }
 
     fn current_from_register(&self, reg: CurrentRegister) -> Self::Current {
@@ -186,6 +203,31 @@ impl Calibration for IntCalibration {
 fn i64_from_signed_register(bits: u16) -> i64 {
     let sixteen = i16::from_ne_bytes(bits.to_ne_bytes());
     i64::from(sixteen)
+}
+
+pub(crate) struct RawCalibration(pub u16);
+
+impl Calibration for RawCalibration {
+    type Current = u16;
+    type Power = u16;
+
+    fn register_bits(&self) -> u16 {
+        self.0
+    }
+
+    fn current_from_register(&self, reg: CurrentRegister) -> Self::Current {
+        reg.0
+    }
+
+    fn power_from_register(&self, reg: PowerRegister) -> Self::Power {
+        reg.0
+    }
+}
+
+impl ReadRegister for RawCalibration {
+    fn from_bits(bits: u16) -> Self {
+        Self(bits)
+    }
 }
 
 #[cfg(test)]

@@ -3,14 +3,15 @@ use crate::calibration::{IntCalibration, MicroAmpere, UnCalibrated};
 use crate::configuration::{BusVoltageRange, ShuntVoltageRange};
 use crate::errors::{BusVoltageReadError, MeasurementError, ShuntVoltageReadError};
 use crate::measurements::Measurements;
-use crate::{Register, INA219};
+use crate::register::RegisterName;
+use crate::INA219;
 use embedded_hal_mock::eh1::i2c::{Mock as I2cMock, Transaction};
 
 const DEV_ADDR: u8 = 0x40;
 
 /// Create the expected `Transaction` for a register read
 #[allow(clippy::cast_possible_truncation)]
-fn read_reg(reg: Register, value: u16) -> Transaction {
+fn read_reg(reg: RegisterName, value: u16) -> Transaction {
     Transaction::write_read(
         DEV_ADDR,
         vec![reg as u8],
@@ -20,13 +21,13 @@ fn read_reg(reg: Register, value: u16) -> Transaction {
 
 /// Create the expected `Transaction` for a register write
 #[allow(clippy::cast_possible_truncation)]
-fn write_reg(reg: Register, value: u16) -> Transaction {
+fn write_reg(reg: RegisterName, value: u16) -> Transaction {
     Transaction::write(DEV_ADDR, vec![reg as u8, (value >> 8) as u8, value as u8])
 }
 
 /// Create all expected `Transaction`s for the initialization sequence
 fn init_transactions() -> Vec<Transaction> {
-    use Register::{BusVoltage, Calibration, Configuration, Current, Power, ShuntVoltage};
+    use RegisterName::{BusVoltage, Calibration, Configuration, Current, Power, ShuntVoltage};
 
     let mut transactions = vec![
         // Write the default configuration, and read back to check it was set
@@ -34,7 +35,7 @@ fn init_transactions() -> Vec<Transaction> {
         read_reg(Configuration, 0b0011_1001_1001_1111),
     ];
 
-    if cfg!(features = "paranoid") {
+    if cfg!(feature = "paranoid") {
         transactions.extend([
             // Check that calibration, current and power are all zero, since we performed a reset
             read_reg(Calibration, 0),
@@ -61,7 +62,7 @@ fn mock_uncal(transactions: &[Transaction]) -> INA219<I2cMock, UnCalibrated> {
 /// Create an calibrated `INA219` that will react with the given transactions to a test
 fn mock_cal(transactions: &[Transaction]) -> INA219<I2cMock, IntCalibration> {
     let mut all_transactions = init_transactions();
-    all_transactions.push(write_reg(Register::Calibration, 409 & !1));
+    all_transactions.push(write_reg(RegisterName::Calibration, 409 & !1));
     all_transactions.extend_from_slice(transactions);
     let mock = I2cMock::new(&all_transactions);
 
@@ -95,13 +96,15 @@ fn initialization_cal() {
 
 #[test]
 fn read_measurements() {
+    use RegisterName::{BusVoltage, Power, ShuntVoltage};
+
     let mut ina = mock_uncal(&[
         // Should first read the bus voltage and see that the "Conversion Ready" flag is set
-        read_reg(Register::BusVoltage, bus_voltage(16_000) | CONVERSION_READY),
+        read_reg(BusVoltage, bus_voltage(16_000) | CONVERSION_READY),
         // Should then read the power register to clear the "Conversion Ready" flag
-        read_reg(Register::Power, 0),
+        read_reg(Power, 0),
         // Since there is a new "Conversion Ready" the driver should read the shunt voltage
-        read_reg(Register::ShuntVoltage, 0b0001_1111_0100_0000), // Borrowed from datasheet table
+        read_reg(ShuntVoltage, 0b0001_1111_0100_0000), // Borrowed from datasheet table
     ]);
 
     let m = ina
@@ -117,12 +120,14 @@ fn read_measurements() {
 
 #[test]
 fn read_measurements_with_cal() {
+    use RegisterName::{BusVoltage, Current, Power, ShuntVoltage};
+
     let mut ina = mock_cal(&[
-        read_reg(Register::BusVoltage, bus_voltage(16_000) | CONVERSION_READY),
-        read_reg(Register::Power, 636),
-        read_reg(Register::ShuntVoltage, 0b0001_1111_0100_0000),
+        read_reg(BusVoltage, bus_voltage(16_000) | CONVERSION_READY),
+        read_reg(Power, 636),
+        read_reg(ShuntVoltage, 0b0001_1111_0100_0000),
         // Additionally to `read_measurements` test now should also read the current register
-        read_reg(Register::Current, 796),
+        read_reg(Current, 796),
     ]);
 
     let m = ina
@@ -142,13 +147,15 @@ fn read_measurements_with_cal() {
 
 #[test]
 fn math_overflow() {
+    use RegisterName::{BusVoltage, Power, ShuntVoltage};
+
     let mut ina = mock_cal(&[
         read_reg(
-            Register::BusVoltage,
+            BusVoltage,
             bus_voltage(16_000) | CONVERSION_READY | MATH_OVERFLOW,
         ),
-        read_reg(Register::Power, 636),
-        read_reg(Register::ShuntVoltage, 0b0001_1111_0100_0000),
+        read_reg(Power, 636),
+        read_reg(ShuntVoltage, 0b0001_1111_0100_0000),
     ]);
 
     let err = ina
@@ -172,9 +179,11 @@ fn math_overflow() {
 
 #[test]
 fn bus_out_of_range_values() {
+    use RegisterName::BusVoltage;
+
     let mut ina = mock_cal(&[
         // Should only read the bus voltage register
-        read_reg(Register::BusVoltage, bus_voltage(32_004) | CONVERSION_READY),
+        read_reg(BusVoltage, bus_voltage(32_004) | CONVERSION_READY),
     ]);
 
     match ina.bus_voltage().unwrap_err() {
@@ -190,9 +199,11 @@ fn bus_out_of_range_values() {
 
 #[test]
 fn shunt_out_of_range_values() {
+    use RegisterName::ShuntVoltage;
+
     let mut ina = mock_cal(&[
         // Should only read the shunt voltage register
-        read_reg(Register::ShuntVoltage, 32_001),
+        read_reg(ShuntVoltage, 32_001),
     ]);
 
     match ina.shunt_voltage().unwrap_err() {

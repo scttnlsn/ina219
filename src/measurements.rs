@@ -6,6 +6,7 @@ use crate::configuration::{BusVoltageRange, ShuntVoltageRange};
 
 #[cfg(doc)]
 use crate::configuration::OperatingMode::{AdcOff, PowerDown};
+use crate::register::{ReadRegister, Register};
 
 /// A collection of all the measurements collected by the INA219
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -34,16 +35,19 @@ pub struct ShuntVoltage(i16);
 impl ShuntVoltage {
     /// Turns the bits read from the register into a `ShuntVoltage` checking that it is in the
     /// maximum value range of the INA219
-    #[must_use]
-    pub const fn from_bits(bits: u16) -> Option<Self> {
-        Self::from_bits_with_range(bits, ShuntVoltageRange::Fsr320mv)
+    #[cfg(test)]
+    const fn from_bits(bits: u16) -> Option<Self> {
+        Self::from_bits_with_range(ShuntVoltageRegister(bits), ShuntVoltageRange::Fsr320mv)
     }
 
     /// Turns the bits of the register into a `ShuntVoltage` checking that it is in the range given
     /// by `range`.
     #[must_use]
-    pub const fn from_bits_with_range(bits: u16, range: ShuntVoltageRange) -> Option<Self> {
-        let raw = Self::from_bits_unchecked(bits);
+    pub(crate) const fn from_bits_with_range(
+        reg: ShuntVoltageRegister,
+        range: ShuntVoltageRange,
+    ) -> Option<Self> {
+        let raw = Self::from_bits_unchecked(reg);
         let ten_uv = raw.shunt_voltage_10uv();
         let range = range.range_mv();
         if ten_uv >= *range.start() * 100 && ten_uv <= *range.end() * 100 {
@@ -55,8 +59,8 @@ impl ShuntVoltage {
 
     /// Turns the bits of the register into a `ShuntVoltage` without performing any range checks.
     #[must_use]
-    pub const fn from_bits_unchecked(bits: u16) -> Self {
-        Self(i16::from_ne_bytes(bits.to_ne_bytes()))
+    pub(crate) const fn from_bits_unchecked(reg: ShuntVoltageRegister) -> Self {
+        Self(i16::from_ne_bytes(reg.0.to_ne_bytes()))
     }
 
     /// Get the shunt voltage in 10µV, this is the resolution reported by the INA219.
@@ -82,6 +86,19 @@ impl ShuntVoltage {
     }
 }
 
+#[derive(Copy, Clone)]
+pub(crate) struct ShuntVoltageRegister(u16);
+
+impl Register for ShuntVoltageRegister {
+    const ADDRESS: u8 = 1;
+}
+
+impl ReadRegister for ShuntVoltageRegister {
+    fn from_bits(bits: u16) -> Self {
+        Self(bits)
+    }
+}
+
 /// Contents of the bus voltage register
 ///
 /// This contains next to the measurement also some flags about the last measurement.
@@ -91,8 +108,11 @@ pub struct BusVoltage(u16);
 impl BusVoltage {
     /// Create `BusVoltage` from the contents of the register checking that it is `range`.
     #[must_use]
-    pub const fn from_bits_with_range(bits: u16, range: BusVoltageRange) -> Option<Self> {
-        let new = Self(bits);
+    pub(crate) const fn from_bits_with_range(
+        reg: BusVoltageRegister,
+        range: BusVoltageRange,
+    ) -> Option<Self> {
+        let new = Self(reg.0);
 
         if new.voltage_mv() <= (range.range_v().end * 1000) {
             Some(new)
@@ -103,8 +123,8 @@ impl BusVoltage {
 
     /// Create `BusVoltage` from the contents of the register. Performing no range checks.
     #[must_use]
-    pub const fn from_bits_unchecked(bits: u16) -> Self {
-        Self(bits)
+    pub(crate) const fn from_bits_unchecked(reg: BusVoltageRegister) -> Self {
+        Self(reg.0)
     }
 
     /// Return the bus voltage in the internal resolution of 4mV
@@ -143,13 +163,46 @@ impl BusVoltage {
     }
 }
 
+#[derive(Copy, Clone)]
+pub(crate) struct BusVoltageRegister(u16);
+
+impl Register for BusVoltageRegister {
+    const ADDRESS: u8 = 2;
+}
+
+impl ReadRegister for BusVoltageRegister {
+    fn from_bits(bits: u16) -> Self {
+        Self(bits)
+    }
+}
+
 /// The raw value read from the current register
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
 pub struct CurrentRegister(pub u16);
 
+impl Register for CurrentRegister {
+    const ADDRESS: u8 = 4;
+}
+
+impl ReadRegister for CurrentRegister {
+    fn from_bits(bits: u16) -> Self {
+        Self(bits)
+    }
+}
+
 /// The raw value read from the power register
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
 pub struct PowerRegister(pub u16);
+
+impl Register for PowerRegister {
+    const ADDRESS: u8 = 3;
+}
+
+impl ReadRegister for PowerRegister {
+    fn from_bits(bits: u16) -> Self {
+        Self(bits)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -199,12 +252,12 @@ mod tests {
 
     #[test]
     fn bus_voltage() {
-        let bv = BusVoltage::from_bits_unchecked(0x1f40 << 3);
+        let bv = BusVoltage::from_bits_unchecked(BusVoltageRegister(0x1f40 << 3));
         assert_eq!(bv.voltage_mv(), 32_000);
         assert!(!bv.is_conversion_ready());
         assert!(!bv.has_math_overflowed());
 
-        let bv = BusVoltage::from_bits_unchecked(((0x1f40 / 2) << 3) | 0b11);
+        let bv = BusVoltage::from_bits_unchecked(BusVoltageRegister(((0x1f40 / 2) << 3) | 0b11));
         assert_eq!(bv.voltage_mv(), 16_000);
         assert!(bv.is_conversion_ready());
         assert!(bv.has_math_overflowed());

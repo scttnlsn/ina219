@@ -13,7 +13,9 @@
 //! };
 //! ```
 
+use crate::register;
 use core::ops::{RangeInclusive, RangeToInclusive};
+use register::{ReadRegister, Register, WriteRegister};
 
 /// Perform a system reset or continue work as normal
 ///
@@ -263,7 +265,7 @@ impl MeasuredSignals {
     const fn from_bits_wrapping(bits: u16) -> Self {
         match bits & 0b11 {
             0 => panic!(
-                "Got passed 0 for signals to measure which should be cought be previous check!"
+                "Got passed 0 for signals to measure which should be caught be previous check!"
             ),
             1 => Self::ShuntVoltage,
             2 => Self::BusVoltage,
@@ -389,6 +391,22 @@ impl Configuration {
         bits = shunt_resolution.apply_to_shunt_reg(bits);
         bits = operating_mode.apply_to_reg(bits);
         bits
+    }
+}
+
+impl Register for Configuration {
+    const ADDRESS: u8 = 0;
+}
+
+impl ReadRegister for Configuration {
+    fn from_bits(bits: u16) -> Self {
+        Self::from_bits(bits)
+    }
+}
+
+impl WriteRegister for Configuration {
+    fn as_bits(&self) -> u16 {
+        Self::as_bits(*self)
     }
 }
 

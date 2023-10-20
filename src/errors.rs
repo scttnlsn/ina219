@@ -3,11 +3,11 @@
 use crate::calibration::UnCalibrated;
 use crate::configuration::{BusVoltageRange, Configuration, ShuntVoltageRange};
 use crate::measurements::{BusVoltage, Measurements, ShuntVoltage};
-use crate::Register;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 use embedded_hal::i2c;
 
+use crate::register::RegisterName;
 #[cfg(doc)]
 use crate::INA219;
 
@@ -54,6 +54,24 @@ pub enum InitializationErrorReason<I2cErr> {
 impl<E> From<E> for InitializationErrorReason<E> {
     fn from(value: E) -> Self {
         Self::I2cError(value)
+    }
+}
+
+impl<E> From<ShuntVoltageReadError<E>> for InitializationErrorReason<E> {
+    fn from(value: ShuntVoltageReadError<E>) -> Self {
+        match value {
+            ShuntVoltageReadError::I2cError(e) => Self::I2cError(e),
+            ShuntVoltageReadError::ShuntVoltageOutOfRange { .. } => Self::ShuntVoltageOutOfRange,
+        }
+    }
+}
+
+impl<E> From<BusVoltageReadError<E>> for InitializationErrorReason<E> {
+    fn from(value: BusVoltageReadError<E>) -> Self {
+        match value {
+            BusVoltageReadError::I2cError(e) => Self::I2cError(e),
+            BusVoltageReadError::BusVoltageOutOfRange { .. } => Self::BusVoltageOutOfRange,
+        }
     }
 }
 
@@ -301,15 +319,5 @@ where
             Self::I2cError(err) => Some(err),
             Self::ConfigurationMismatch { .. } => None,
         }
-    }
-}
-
-/// The name of a register, used in errors
-#[derive(Copy, Clone)]
-pub struct RegisterName(pub(crate) Register);
-
-impl Debug for RegisterName {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
     }
 }
