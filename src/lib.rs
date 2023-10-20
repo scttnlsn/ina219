@@ -28,6 +28,7 @@ mod tests;
 /// Addresses of the internal registers of the INA219
 ///
 /// See [`INA219::read_raw()`]
+#[repr(u8)]
 #[derive(Debug, Copy, Clone)]
 enum Register {
     /// Configuration register, see [`Configuration`]
@@ -232,7 +233,8 @@ where
                                       // Remove when https://github.com/rust-lang/rust/issues/8995 is resolved
     pub fn next_measurement(
         &mut self,
-    ) -> Result<Option<Measurements<Calib::Current, Calib::Power>>, MeasurementError<I2C::Error>> {
+    ) -> Result<Option<Measurements<Calib::Current, Calib::Power>>, MeasurementError<I2C::Error>>
+    {
         let bus_voltage = self.bus_voltage()?;
         if !bus_voltage.is_conversion_ready() {
             // No new data... nothing to do...
