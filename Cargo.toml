@@ -5,7 +5,7 @@ edition = "2021"
 version = "0.2.0"
 keywords = ["ina219", "driver", "i2c", "current", "no_std"]
 repository = "https://github.com/scttnlsn/ina219"
-authors = ["Scott Nelson <scott@scottnelson.co>"]
+authors = ["Scott Nelson <scott@scottnelson.co>", "Tamme Dittrich <tamme@tweedegolf.com>"]
 license = "MIT/Apache-2.0"
 
 [features]
