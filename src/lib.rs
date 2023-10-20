@@ -157,8 +157,8 @@ where
 
     /// Perform a power-on-reset
     ///
-    /// # Errors
-    /// Returns Err() when the underlying I2C device returns an error.
+    /// Make sure to set calibration after this finishes so self.calib matches what the device is
+    /// calibrated to
     fn reset(&mut self) -> Result<(), InitializationErrorReason<I2C::Error>> {
         const MAX_RESET_READ_RETRIES: u8 = 10;
 
@@ -213,6 +213,8 @@ where
     /// Returns Err() when the underlying I2C device returns an error.
     pub fn set_configuration(&mut self, conf: Configuration) -> Result<(), I2C::Error> {
         let result = self.write(conf);
+
+        // TODO what to do in case this causes a reset? Just panic?
 
         #[cfg(feature = "paranoid")]
         {
