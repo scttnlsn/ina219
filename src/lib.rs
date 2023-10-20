@@ -9,10 +9,12 @@ use crate::address::Address;
 use crate::calibration::{Calibration, UnCalibrated};
 use crate::configuration::{BusVoltageRange, ShuntVoltageRange};
 use crate::errors::InitializationErrorReason;
-use crate::measurements::{CurrentRegister, Measurements, PowerRegister, ShuntVoltageRegister};
+use crate::measurements::{
+    BusVoltageRegister, CurrentRegister, Measurements, PowerRegister, ShuntVoltageRegister,
+};
 use crate::register::WriteRegister;
 use configuration::{Configuration, Reset};
-use embedded_hal::i2c::I2c;
+use embedded_hal::i2c::{ErrorType, I2c, Operation};
 use errors::{
     BusVoltageReadError, ConfigurationReadError, InitializationError, MeasurementError,
     ShuntVoltageReadError,
@@ -249,16 +251,15 @@ where
     pub fn next_measurement(
         &mut self,
     ) -> Result<Option<Measurements<Calib>>, MeasurementError<I2C::Error>> {
-        let bus_voltage = self.bus_voltage()?;
+        let (bus_voltage, power, shunt_voltage, current) = self.read4()?;
+
+        let bus_voltage = self.bus_voltage_from_register(bus_voltage)?;
         if !bus_voltage.is_conversion_ready() {
             // No new data... nothing to do...
             return Ok(None);
         }
 
-        // Reset conversion ready flag
-        let power = self.read::<PowerRegister>()?;
-
-        let shunt_voltage = self.shunt_voltage()?;
+        let shunt_voltage = self.shunt_voltage_from_register(shunt_voltage)?;
 
         if bus_voltage.has_math_overflowed() {
             return Err(MeasurementError::MathOverflow(Measurements {
@@ -268,12 +269,6 @@ where
                 power: (),
             }));
         }
-
-        let current = if Calib::READ_CURRENT {
-            self.read::<CurrentRegister>()?
-        } else {
-            CurrentRegister(0)
-        };
 
         Ok(Some(Measurements {
             bus_voltage,
@@ -291,6 +286,13 @@ where
     pub fn shunt_voltage(&mut self) -> Result<ShuntVoltage, ShuntVoltageReadError<I2C::Error>> {
         let value: ShuntVoltageRegister = self.read()?;
 
+        self.shunt_voltage_from_register(value)
+    }
+
+    fn shunt_voltage_from_register(
+        &mut self,
+        value: ShuntVoltageRegister,
+    ) -> Result<ShuntVoltage, ShuntVoltageReadError<I2C::Error>> {
         // If we are paranoid we look up what we last set for the full range
         #[cfg(feature = "paranoid")]
         let shunt_voltage_range = self
@@ -317,6 +319,13 @@ where
     pub fn bus_voltage(&mut self) -> Result<BusVoltage, BusVoltageReadError<I2C::Error>> {
         let value = self.read()?;
 
+        self.bus_voltage_from_register(value)
+    }
+
+    fn bus_voltage_from_register(
+        &mut self,
+        value: BusVoltageRegister,
+    ) -> Result<BusVoltage, BusVoltageReadError<I2C::Error>> {
         // If we are paranoid we look up what we last set for the full range
         #[cfg(feature = "paranoid")]
         let bus_voltage_range = self
@@ -356,6 +365,40 @@ where
         self.i2c
             .write_read(self.address.as_byte(), &[Reg::ADDRESS], &mut buf)?;
         Ok(Reg::from_bits(u16::from_be_bytes(buf)))
+    }
+
+    fn read4<R0, R1, R2, R3>(&mut self) -> Result<(R0, R1, R2, R3), I2C::Error>
+    where
+        R0: register::ReadRegister,
+        R1: register::ReadRegister,
+        R2: register::ReadRegister,
+        R3: register::ReadRegister,
+    {
+        let mut b0: [u8; 2] = [0x00; 2];
+        let mut b1: [u8; 2] = [0x00; 2];
+        let mut b2: [u8; 2] = [0x00; 2];
+        let mut b3: [u8; 2] = [0x00; 2];
+
+        let mut transactions = [
+            Operation::Write(&[R0::ADDRESS]),
+            Operation::Read(&mut b0),
+            Operation::Write(&[R1::ADDRESS]),
+            Operation::Read(&mut b1),
+            Operation::Write(&[R2::ADDRESS]),
+            Operation::Read(&mut b2),
+            Operation::Write(&[R3::ADDRESS]),
+            Operation::Read(&mut b3),
+        ];
+
+        self.i2c
+            .transaction(self.address.as_byte(), &mut transactions[..])?;
+
+        Ok((
+            R0::from_bits(u16::from_be_bytes(b0)),
+            R1::from_bits(u16::from_be_bytes(b1)),
+            R2::from_bits(u16::from_be_bytes(b2)),
+            R3::from_bits(u16::from_be_bytes(b3)),
+        ))
     }
 
     /// Write the value contained in the register to the address dictated by its type
