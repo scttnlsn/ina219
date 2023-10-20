@@ -55,7 +55,7 @@ fn mock_uncal(transactions: &[Transaction]) -> INA219<I2cMock, UnCalibrated> {
     all_transactions.extend_from_slice(transactions);
     let mock = I2cMock::new(&all_transactions);
 
-    INA219::new(mock, Address::default(), UnCalibrated).unwrap()
+    INA219::new(mock, Address::default()).unwrap()
 }
 
 /// Create an calibrated `INA219` that will react with the given transactions to a test
@@ -65,7 +65,7 @@ fn mock_cal(transactions: &[Transaction]) -> INA219<I2cMock, IntCalibration> {
     all_transactions.extend_from_slice(transactions);
     let mock = I2cMock::new(&all_transactions);
 
-    INA219::new(
+    INA219::new_calibrated(
         mock,
         Address::default(),
         IntCalibration::new(MicroAmpere(100), 1_000_000).unwrap(),

@@ -1,18 +1,48 @@
 //! Errors that can be returned by the different functions
 
+use crate::calibration::UnCalibrated;
 use crate::configuration::{BusVoltageRange, Configuration, ShuntVoltageRange};
 use crate::measurements::{BusVoltage, Measurements, ShuntVoltage};
 use crate::Register;
+use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
+use embedded_hal::i2c;
+
+#[cfg(doc)]
+use crate::INA219;
+
+/// Error returned in case the initialization fails
+pub struct InitializationError<I2c: i2c::I2c> {
+    /// Reason why the initialization failed
+    pub reason: InitializationErrorReason<I2c::Error>,
+    /// The I2C device that was passed into [`INA219::new`] or [`INA219::new_calibrated`]
+    pub device: I2c,
+}
+
+impl<I2c: i2c::I2c> InitializationError<I2c> {
+    pub(crate) fn new(err: impl Into<InitializationErrorReason<I2c::Error>>, device: I2c) -> Self {
+        Self {
+            reason: err.into(),
+            device,
+        }
+    }
+}
+
+impl<I2c: i2c::I2c> Debug for InitializationError<I2c> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("InitializationError")
+            .field(&self.reason)
+            .finish()
+    }
+}
 
 /// Error conditions that can appear during initialization
 #[derive(Debug, Copy, Clone)]
-pub enum InitializationError<I2cErr> {
+pub enum InitializationErrorReason<I2cErr> {
     /// An I2C read or write failed
     I2cError(I2cErr),
     /// The configuration was not the default value after a reset
     ConfigurationNotDefaultAfterReset,
-
     /// A register was not zero when it was expected to be after reset
     RegisterNotZeroAfterReset(RegisterName),
     /// The shunt voltage value was not in the range expected after a reset
@@ -21,40 +51,48 @@ pub enum InitializationError<I2cErr> {
     BusVoltageOutOfRange,
 }
 
-impl<E> From<E> for InitializationError<E> {
+impl<E> From<E> for InitializationErrorReason<E> {
     fn from(value: E) -> Self {
         Self::I2cError(value)
     }
 }
 
 #[cfg(feature = "std")]
-impl<I2cErr> std::error::Error for InitializationError<I2cErr>
+impl<I2c: i2c::I2c> std::error::Error for InitializationError<I2c>
 where
-    I2cErr: Debug + std::error::Error + 'static,
+    I2c: Debug,
+    I2c::Error: Debug + std::error::Error + 'static,
 {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::I2cError(err) => Some(err),
-            Self::ConfigurationNotDefaultAfterReset
-            | Self::BusVoltageOutOfRange
-            | Self::RegisterNotZeroAfterReset(_)
-            | Self::ShuntVoltageOutOfRange => None,
+        match &self.reason {
+            InitializationErrorReason::I2cError(err) => Some(err),
+            InitializationErrorReason::ConfigurationNotDefaultAfterReset
+            | InitializationErrorReason::BusVoltageOutOfRange
+            | InitializationErrorReason::RegisterNotZeroAfterReset(_)
+            | InitializationErrorReason::ShuntVoltageOutOfRange => None,
         }
     }
 }
 
-impl<I2cErr: Debug> Display for InitializationError<I2cErr> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::I2cError(err) => write!(f, "I2C error: {err:?}"),
-            Self::ConfigurationNotDefaultAfterReset => {
+impl<I2c: i2c::I2c> Display for InitializationError<I2c>
+where
+    I2c::Error: Debug,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.reason {
+            InitializationErrorReason::I2cError(err) => write!(f, "I2C error: {err:?}"),
+            InitializationErrorReason::ConfigurationNotDefaultAfterReset => {
                 write!(f, "Configuration was not default after reset")
             }
-            Self::RegisterNotZeroAfterReset(reg) => {
+            InitializationErrorReason::RegisterNotZeroAfterReset(reg) => {
                 write!(f, "Register {reg:?} was not zero after reset")
             }
-            Self::ShuntVoltageOutOfRange => write!(f, "Shunt voltage was out of range"),
-            Self::BusVoltageOutOfRange => write!(f, "Bus voltage was out of range"),
+            InitializationErrorReason::ShuntVoltageOutOfRange => {
+                write!(f, "Shunt voltage was out of range")
+            }
+            InitializationErrorReason::BusVoltageOutOfRange => {
+                write!(f, "Bus voltage was out of range")
+            }
         }
     }
 }
@@ -69,7 +107,7 @@ pub enum MeasurementError<I2cErr> {
     /// An error occurred while reading the bus voltage
     BusVoltageReadError(BusVoltageReadError<I2cErr>),
     /// The INA219 reported a math overflow for the given bus and shunt voltage
-    MathOverflow(Measurements<(), ()>),
+    MathOverflow(Measurements<UnCalibrated>),
 }
 
 impl<E> From<E> for MeasurementError<E> {
@@ -114,7 +152,7 @@ where
 }
 
 impl<I2cErr: Debug> Display for MeasurementError<I2cErr> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::I2cError(err) => write!(f, "I2C error: {err:?}"),
             Self::ShuntVoltageReadError(err) => write!(f, "Shunt voltage read error: {err:?}"),
@@ -152,7 +190,7 @@ impl<E> From<E> for ShuntVoltageReadError<E> {
 }
 
 impl<E: Debug> Display for ShuntVoltageReadError<E> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::I2cError(err) => write!(f, "I2C error: {err:?}"),
             Self::ShuntVoltageOutOfRange { should, is } => write!(
@@ -197,7 +235,7 @@ impl<E> From<E> for BusVoltageReadError<E> {
 }
 
 impl<E: Debug> Display for BusVoltageReadError<E> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::I2cError(err) => write!(f, "I2C error: {err:?}"),
             Self::BusVoltageOutOfRange { should, is } => write!(
@@ -242,7 +280,7 @@ impl<E> From<E> for ConfigurationReadError<E> {
 }
 
 impl<E: Debug> Display for ConfigurationReadError<E> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::I2cError(err) => write!(f, "I2C error: {err:?}"),
             Self::ConfigurationMismatch { read, saved } => write!(
@@ -271,7 +309,7 @@ where
 pub struct RegisterName(pub(crate) Register);
 
 impl Debug for RegisterName {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
 }

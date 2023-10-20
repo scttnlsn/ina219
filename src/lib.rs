@@ -5,8 +5,9 @@
 
 //! TODO: crate level docs
 
-use crate::calibration::Calibration;
+use crate::calibration::{Calibration, UnCalibrated};
 use crate::configuration::{BusVoltageRange, ShuntVoltageRange};
+use crate::errors::InitializationErrorReason;
 use crate::measurements::{CurrentRegister, Measurements, PowerRegister};
 use configuration::{Configuration, Reset};
 use core::fmt::Debug;
@@ -55,35 +56,65 @@ pub struct INA219<I2C, Calib> {
     calib: Calib,
 }
 
+impl<I2C> INA219<I2C, UnCalibrated>
+where
+    I2C: I2c,
+{
+    /// Open an INA219 without calibration
+    ///
+    /// Performs a reset and if the `paranoid` feature is active checks all register values are in
+    /// the expected ranges.
+    ///
+    /// # Errors
+    /// If the device returns an unexpected response a `InitializationError` is returned.
+    pub fn new(i2c: I2C, address: address::Address) -> Result<Self, InitializationError<I2C>> {
+        Self::new_calibrated(i2c, address, UnCalibrated)
+    }
+}
+
 impl<I2C, Calib> INA219<I2C, Calib>
 where
     I2C: I2c,
     Calib: Calibration,
 {
-    /// Open an INA219, perform a reset and check all register values are in the expected ranges
+    /// Open an INA219, perform a reset and check all register values are in the expected ranges than apply the provided calibration
     ///
     /// # Errors
     /// If the device returns an unexpected response a `InitializationError` is returned.
-    pub fn new(
+    pub fn new_calibrated(
         i2c: I2C,
         address: address::Address,
         calibration: Calib,
-    ) -> Result<Self, InitializationError<I2C::Error>> {
-        const MAX_RESET_READ_RETRIES: u8 = 10;
-
+    ) -> Result<Self, InitializationError<I2C>> {
         let mut new = INA219::new_unchecked(i2c, address, calibration);
 
-        new.reset()?;
+        // This is done in a function to make error handling easier...
+        // since we want to return the device in case something goes wrong
+        match new.init() {
+            Ok(()) => Ok(new),
+            Err(e) => Err(InitializationError::new(e, new.destroy())),
+        }
+    }
+
+    /// Perform the following steps on this device to bring it into a known state
+    /// - Perform a Reset
+    /// - Wait for the Reset to finish, by polling 10 times for if it is already done (are we there yet?)
+    /// - If paranoid: Check if all registers are in the expected ranges
+    /// - Apply the register value from self.calib
+    fn init(&mut self) -> Result<(), InitializationErrorReason<I2C::Error>> {
+        const MAX_RESET_READ_RETRIES: u8 = 10;
+
+        self.reset()?;
 
         // We retry reading the configuration in case the device did not finish the reset yet
         let mut attempt = 0;
         loop {
-            if new.read_configuration()? == Configuration::default() {
+            if self.read_configuration()? == Configuration::default() {
                 break;
             }
 
             if attempt > MAX_RESET_READ_RETRIES {
-                return Err(InitializationError::ConfigurationNotDefaultAfterReset);
+                return Err(InitializationErrorReason::ConfigurationNotDefaultAfterReset);
             }
 
             attempt += 1;
@@ -94,8 +125,8 @@ where
         {
             // Check that all calculated registers read zero after reset
             for reg in [Register::Calibration, Register::Current, Register::Power] {
-                if new.read_raw(reg)? != 0 {
-                    return Err(InitializationError::RegisterNotZeroAfterReset(
+                if self.read_raw(reg)? != 0 {
+                    return Err(InitializationErrorReason::RegisterNotZeroAfterReset(
                         errors::RegisterName(reg),
                     ));
                 }
@@ -103,32 +134,35 @@ where
 
             // Check that the shunt voltage is in range
             if ShuntVoltage::from_bits_with_range(
-                new.read_raw(Register::ShuntVoltage)?,
+                self.read_raw(Register::ShuntVoltage)?,
                 Configuration::default().shunt_voltage_range,
             )
             .is_none()
             {
-                return Err(InitializationError::ShuntVoltageOutOfRange);
+                return Err(InitializationErrorReason::ShuntVoltageOutOfRange);
             }
 
             // Check that the bus voltage is in range
             if BusVoltage::from_bits_with_range(
-                new.read_raw(Register::BusVoltage)?,
+                self.read_raw(Register::BusVoltage)?,
                 Configuration::default().bus_voltage_range,
             )
             .is_none()
             {
-                return Err(InitializationError::BusVoltageOutOfRange);
+                return Err(InitializationErrorReason::BusVoltageOutOfRange);
             }
         }
 
         // Calibrate the device
-        let bits = new.calib.register_bits();
-        if bits != 0 {
-            new.calibrate_raw(bits)?;
+        let bits = self.calib.register_bits();
+        if bits == 0 {
+            // Do nothing
+            // We can skip writing a calibration of 0 since that is the reset value
+        } else {
+            self.calibrate_raw(bits)?;
         }
 
-        Ok(new)
+        Ok(())
     }
 
     /// Create a new `INA219` assuming the device is already initialized to the given values.
@@ -237,8 +271,7 @@ where
                                       // Remove when https://github.com/rust-lang/rust/issues/8995 is resolved
     pub fn next_measurement(
         &mut self,
-    ) -> Result<Option<Measurements<Calib::Current, Calib::Power>>, MeasurementError<I2C::Error>>
-    {
+    ) -> Result<Option<Measurements<Calib>>, MeasurementError<I2C::Error>> {
         let bus_voltage = self.bus_voltage()?;
         if !bus_voltage.is_conversion_ready() {
             // No new data... nothing to do...

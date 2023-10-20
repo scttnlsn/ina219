@@ -1,6 +1,7 @@
 //! Types wrapping the measurements of the INA219
 //!
 //! These types help converting the ras register values into expressive values.
+use crate::calibration::Calibration;
 use crate::configuration::{BusVoltageRange, ShuntVoltageRange};
 
 #[cfg(doc)]
@@ -8,15 +9,15 @@ use crate::configuration::OperatingMode::{AdcOff, PowerDown};
 
 /// A collection of all the measurements collected by the INA219
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub struct Measurements<Current, Power> {
+pub struct Measurements<Calib: Calibration> {
     /// Measured `BusVoltage`
     pub bus_voltage: BusVoltage,
     /// Measured `ShuntVoltage`
     pub shunt_voltage: ShuntVoltage,
     /// Measured `Current`
-    pub current: Current,
+    pub current: Calib::Current,
     /// Measured `Power`
-    pub power: Power,
+    pub power: Calib::Power,
 }
 
 /// Errors that can arise when current and power are calculated
@@ -58,7 +59,7 @@ impl ShuntVoltage {
         Self(i16::from_ne_bytes(bits.to_ne_bytes()))
     }
 
-    /// Get the shunt voltage in 10µV, this is the resolution used by the INA219.
+    /// Get the shunt voltage in 10µV, this is the resolution reported by the INA219.
     ///
     /// See also:
     /// * [`Self::shunt_voltage_uv`] for measurement in µV
