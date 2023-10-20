@@ -9,8 +9,18 @@ authors = ["Scott Nelson <scott@scottnelson.co>", "Tamme Dittrich <tamme@tweedeg
 license = "MIT/Apache-2.0"
 
 [features]
-default = []
+default = ["paranoid"]
+
+# Use the standard library and impl std::error::Error on all error types
 std = []
+
+# Perform checks to see if the INA219 reacts as expected such as:
+# - All measurements are in the configured ranges
+# - We can read back the configuration we have written without any changes
+#
+# This does cause some overhead such as memorizing the last written configuration and performing more actions on the
+# bus. So it can be disable by setting `default-features = false`.
+paranoid = []
 
 [dependencies]
 embedded-hal = "1.0.0-rc.1"

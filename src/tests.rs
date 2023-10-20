@@ -28,18 +28,25 @@ fn write_reg(reg: Register, value: u16) -> Transaction {
 fn init_transactions() -> Vec<Transaction> {
     use Register::{BusVoltage, Calibration, Configuration, Current, Power, ShuntVoltage};
 
-    vec![
+    let mut transactions = vec![
         // Write the default configuration, and read back to check it was set
         write_reg(Configuration, 0b1011_1001_1001_1111),
         read_reg(Configuration, 0b0011_1001_1001_1111),
-        // Check that calibration, current and power are all zero, since we performed a reset
-        read_reg(Calibration, 0),
-        read_reg(Current, 0),
-        read_reg(Power, 0),
-        // Check that shunt voltage and bus voltage are in the expected range
-        read_reg(ShuntVoltage, 0),
-        read_reg(BusVoltage, 0),
-    ]
+    ];
+
+    if cfg!(features = "paranoid") {
+        transactions.extend([
+            // Check that calibration, current and power are all zero, since we performed a reset
+            read_reg(Calibration, 0),
+            read_reg(Current, 0),
+            read_reg(Power, 0),
+            // Check that shunt voltage and bus voltage are in the expected range
+            read_reg(ShuntVoltage, 0),
+            read_reg(BusVoltage, 0),
+        ]);
+    }
+
+    transactions
 }
 
 /// Create an uncalibrated `INA219` that will react with the given transactions to a test

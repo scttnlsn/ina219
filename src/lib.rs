@@ -6,6 +6,7 @@
 //! TODO: crate level docs
 
 use crate::calibration::Calibration;
+use crate::configuration::{BusVoltageRange, ShuntVoltageRange};
 use crate::measurements::{CurrentRegister, Measurements, PowerRegister};
 use configuration::{Configuration, Reset};
 use core::fmt::Debug;
@@ -45,24 +46,12 @@ enum Register {
     Calibration = 0x05,
 }
 
-impl Register {
-    const fn name(self) -> &'static str {
-        match self {
-            Self::Configuration => "Configuration",
-            Self::ShuntVoltage => "ShuntVoltage",
-            Self::BusVoltage => "BusVoltage",
-            Self::Power => "Power",
-            Self::Current => "Current",
-            Self::Calibration => "Calibration",
-        }
-    }
-}
-
 /// Embedded HAL compatible driver for the INA219
 pub struct INA219<I2C, Calib> {
     i2c: I2C,
     address: address::Address,
-    config: Configuration,
+    #[cfg(feature = "paranoid")]
+    config: Option<Configuration>,
     calib: Calib,
 }
 
@@ -80,7 +69,9 @@ where
         address: address::Address,
         calibration: Calib,
     ) -> Result<Self, InitializationError<I2C::Error>> {
-        let mut new = INA219::new_unchecked(i2c, address, Configuration::default(), calibration);
+        const MAX_RESET_READ_RETRIES: u8 = 10;
+
+        let mut new = INA219::new_unchecked(i2c, address, calibration);
 
         new.reset()?;
 
@@ -91,38 +82,44 @@ where
                 break;
             }
 
-            if attempt > 10 {
+            if attempt > MAX_RESET_READ_RETRIES {
                 return Err(InitializationError::ConfigurationNotDefaultAfterReset);
             }
 
             attempt += 1;
         }
 
-        // Check that all calculated registers read zero after reset
-        for reg in [Register::Calibration, Register::Current, Register::Power] {
-            if new.read_raw(reg)? != 0 {
-                return Err(InitializationError::RegisterNotZeroAfterReset(reg.name()));
+        // If we are paranoid we perform extra checks to verify we talk to a real INA219
+        #[cfg(feature = "paranoid")]
+        {
+            // Check that all calculated registers read zero after reset
+            for reg in [Register::Calibration, Register::Current, Register::Power] {
+                if new.read_raw(reg)? != 0 {
+                    return Err(InitializationError::RegisterNotZeroAfterReset(
+                        errors::RegisterName(reg),
+                    ));
+                }
             }
-        }
 
-        // Check that the shunt voltage is in range
-        if ShuntVoltage::from_bits_with_range(
-            new.read_raw(Register::ShuntVoltage)?,
-            Configuration::default().shunt_voltage_range,
-        )
-        .is_none()
-        {
-            return Err(InitializationError::ShuntVoltageOutOfRange);
-        }
+            // Check that the shunt voltage is in range
+            if ShuntVoltage::from_bits_with_range(
+                new.read_raw(Register::ShuntVoltage)?,
+                Configuration::default().shunt_voltage_range,
+            )
+            .is_none()
+            {
+                return Err(InitializationError::ShuntVoltageOutOfRange);
+            }
 
-        // Check that the bus voltage is in range
-        if BusVoltage::from_bits_with_range(
-            new.read_raw(Register::BusVoltage)?,
-            Configuration::default().bus_voltage_range,
-        )
-        .is_none()
-        {
-            return Err(InitializationError::BusVoltageOutOfRange);
+            // Check that the bus voltage is in range
+            if BusVoltage::from_bits_with_range(
+                new.read_raw(Register::BusVoltage)?,
+                Configuration::default().bus_voltage_range,
+            )
+            .is_none()
+            {
+                return Err(InitializationError::BusVoltageOutOfRange);
+            }
         }
 
         // Calibrate the device
@@ -137,22 +134,19 @@ where
     /// Create a new `INA219` assuming the device is already initialized to the given values.
     ///
     /// This also does not write the given configuration or calibration.
-    pub const fn new_unchecked(
-        i2c: I2C,
-        address: address::Address,
-        config: Configuration,
-        calib: Calib,
-    ) -> Self {
+    pub const fn new_unchecked(i2c: I2C, address: address::Address, calib: Calib) -> Self {
         INA219 {
             i2c,
             address,
-            config,
+            #[cfg(feature = "paranoid")]
+            config: None,
             calib,
         }
     }
 
     /// Destroy the driver returning the underlying I2C device
-    #[allow(clippy::missing_const_for_fn)]
+    ///
+    /// This does leave the device in it's current state.
     pub fn destroy(self) -> I2C {
         self.i2c
     }
@@ -172,21 +166,27 @@ where
     ///
     /// # Errors
     /// Returns Err() when the underlying I2C device returns an error.
+    ///
+    /// *With feature `paranoid`*:
+    ///
+    /// If the read configuration does not match the last saved configuration an error is returned
+    /// and the saved configuration is updated to the read configuration.
     pub fn configuration(&mut self) -> Result<Configuration, ConfigurationReadError<I2C::Error>> {
-        // TODO: How to handle case where read and self.config disagree
+        let read = self.read_configuration()?;
 
-        let conf = self.read_configuration()?;
-
-        if conf != self.config {
-            return Err(ConfigurationReadError::ConfigurationMismatch {
-                read: conf,
-                saved: self.config,
-            });
+        #[cfg(feature = "paranoid")]
+        {
+            let saved = *self.config.get_or_insert(read);
+            if read != saved {
+                self.config = Some(read);
+                return Err(ConfigurationReadError::ConfigurationMismatch { read, saved });
+            }
         }
 
-        Ok(conf)
+        Ok(read)
     }
 
+    /// Read the configuration without any checks, which is needed during initialization
     fn read_configuration(&mut self) -> Result<Configuration, I2C::Error> {
         let bits = self.read_raw(Register::Configuration)?;
         Ok(Configuration::from_bits(bits))
@@ -197,16 +197,19 @@ where
     /// # Errors
     /// Returns Err() when the underlying I2C device returns an error.
     pub fn set_configuration(&mut self, conf: Configuration) -> Result<(), I2C::Error> {
-        match self.write(Register::Configuration, conf.as_bits()) {
-            ok @ Ok(()) => {
-                self.config = conf;
-                ok
-            }
-            e @ Err(_) => {
-                self.config = self.read_configuration()?;
-                e
-            }
+        let result = self.write_raw(Register::Configuration, conf.as_bits());
+
+        #[cfg(feature = "paranoid")]
+        {
+            self.config = match result {
+                Ok(()) => Some(conf),
+                // We don't know anything about the current conf
+                Err(_) => None,
+            };
         }
+
+        #[cfg_attr(not(feature = "paranoid"), allow(clippy::let_and_return))]
+        result
     }
 
     /// Set a new [`Calibration`]
@@ -219,13 +222,14 @@ where
     }
 
     fn calibrate_raw(&mut self, value: u16) -> Result<(), I2C::Error> {
-        self.write(Register::Calibration, value)
+        self.write_raw(Register::Calibration, value)
     }
 
     /// Checks if a new measurement was performed since the last configuration change,
-    /// `Self::power` call or `Self::next_measurement`call returning Ok(None) if there is no new data
+    /// [`Self::power_raw`] call or [`Self::next_measurement`] call returning Ok(None) if there is no new data
     ///
     /// TODO: Explain caveats around resetting the conversion ready flag
+    ///
     /// # Errors
     /// Returns an error if the underlying I2C device returns an error or when any of the
     /// measurements is outside of their expected ranges.
@@ -276,12 +280,23 @@ where
     /// is outside of the expected range given in the last written configuration.
     pub fn shunt_voltage(&mut self) -> Result<ShuntVoltage, ShuntVoltageReadError<I2C::Error>> {
         let value = self.read_raw(Register::ShuntVoltage)?;
-        ShuntVoltage::from_bits_with_range(value, self.config.shunt_voltage_range).ok_or(
+
+        // If we are paranoid we look up what we last set for the full range
+        #[cfg(feature = "paranoid")]
+        let shunt_voltage_range = self
+            .config
+            .map_or(ShuntVoltageRange::Fsr320mv, |c| c.shunt_voltage_range);
+
+        // If we are not paranoid we still check that it is in the maximum range
+        #[cfg(not(feature = "paranoid"))]
+        let shunt_voltage_range = ShuntVoltageRange::Fsr320mv;
+
+        ShuntVoltage::from_bits_with_range(value, shunt_voltage_range).ok_or_else(|| {
             ShuntVoltageReadError::ShuntVoltageOutOfRange {
-                should: self.config.shunt_voltage_range,
+                should: shunt_voltage_range,
                 is: ShuntVoltage::from_bits_unchecked(value),
-            },
-        )
+            }
+        })
     }
 
     /// Read the last measured bus voltage
@@ -291,19 +306,30 @@ where
     /// is outside of the expected range given in the last written configuration.
     pub fn bus_voltage(&mut self) -> Result<BusVoltage, BusVoltageReadError<I2C::Error>> {
         let value = self.read_raw(Register::BusVoltage)?;
-        BusVoltage::from_bits_with_range(value, self.config.bus_voltage_range).ok_or(
+
+        // If we are paranoid we look up what we last set for the full range
+        #[cfg(feature = "paranoid")]
+        let bus_voltage_range = self
+            .config
+            .map_or(BusVoltageRange::Fsr32v, |c| c.bus_voltage_range);
+
+        // If we are not paranoid we still check that it is in the maximum range
+        #[cfg(not(feature = "paranoid"))]
+        let bus_voltage_range = BusVoltageRange::Fsr32v;
+
+        BusVoltage::from_bits_with_range(value, bus_voltage_range).ok_or_else(|| {
             BusVoltageReadError::BusVoltageOutOfRange {
-                should: self.config.bus_voltage_range,
+                should: bus_voltage_range,
                 is: BusVoltage::from_bits_unchecked(value),
-            },
-        )
+            }
+        })
     }
 
     /// Read the last measured power
     ///
     /// # Errors
     /// Returns an error if the underlying I2C device returns an error.
-    fn power_raw(&mut self) -> Result<PowerRegister, I2C::Error> {
+    pub fn power_raw(&mut self) -> Result<PowerRegister, I2C::Error> {
         let bits = self.read_raw(Register::Power)?;
         Ok(PowerRegister(bits))
     }
@@ -312,7 +338,7 @@ where
     ///
     /// # Errors
     /// Returns an error if the underlying I2C device returns an error.
-    fn current_raw(&mut self) -> Result<CurrentRegister, I2C::Error> {
+    pub fn current_raw(&mut self) -> Result<CurrentRegister, I2C::Error> {
         let bits = self.read_raw(Register::Current)?;
         Ok(CurrentRegister(bits))
     }
@@ -328,7 +354,11 @@ where
         Ok(u16::from_be_bytes(buf))
     }
 
-    fn write(&mut self, register: Register, value: u16) -> Result<(), I2C::Error> {
+    /// Writes the raw contents of a [`Register`]
+    ///
+    /// # Errors
+    /// Returns an error if the underlying I2C device returns an error.
+    fn write_raw(&mut self, register: Register, value: u16) -> Result<(), I2C::Error> {
         let [val0, val1] = value.to_be_bytes();
         self.i2c
             .write(self.address.as_byte(), &[register as u8, val0, val1])

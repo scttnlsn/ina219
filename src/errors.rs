@@ -2,6 +2,7 @@
 
 use crate::configuration::{BusVoltageRange, Configuration, ShuntVoltageRange};
 use crate::measurements::{BusVoltage, Measurements, ShuntVoltage};
+use crate::Register;
 use core::fmt::{Debug, Display, Formatter};
 
 /// Error conditions that can appear during initialization
@@ -11,8 +12,9 @@ pub enum InitializationError<I2cErr> {
     I2cError(I2cErr),
     /// The configuration was not the default value after a reset
     ConfigurationNotDefaultAfterReset,
+
     /// A register was not zero when it was expected to be after reset
-    RegisterNotZeroAfterReset(&'static str),
+    RegisterNotZeroAfterReset(RegisterName),
     /// The shunt voltage value was not in the range expected after a reset
     ShuntVoltageOutOfRange,
     /// The bus voltage value was not in the range expected after a reset
@@ -261,5 +263,15 @@ where
             Self::I2cError(err) => Some(err),
             Self::ConfigurationMismatch { .. } => None,
         }
+    }
+}
+
+/// The name of a register, used in errors
+#[derive(Copy, Clone)]
+pub struct RegisterName(pub(crate) Register);
+
+impl Debug for RegisterName {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        self.0.fmt(f)
     }
 }
