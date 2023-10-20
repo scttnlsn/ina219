@@ -13,8 +13,12 @@ default = []
 std = []
 
 [dependencies]
-embedded-hal = "0.2"
+embedded-hal = "1.0.0-rc.1"
 
 [dev-dependencies]
-linux-embedded-hal = "0.3.2"
-embedded-hal-mock = "0.9.0"
+linux-embedded-hal = "0.4.0-alpha.3"
+embedded-hal-mock = { version = "0.9.0", default-features = false, features = ["eh1"] }
+
+[patch.crates-io]
+linux-embedded-hal = { git = "https://github.com/rust-embedded/linux-embedded-hal/", rev = "27daf71e8ee22ff2b33fca5972a47dd139de69e2" }
+embedded-hal-mock = { git = "https://github.com/newAM/embedded-hal-mock/", rev = "27ec847f3890c3406c33c0804d71a25ca6771941" }

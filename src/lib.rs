@@ -9,7 +9,7 @@ use crate::calibration::Calibration;
 use crate::measurements::{CurrentRegister, Measurements, PowerRegister};
 use configuration::{Configuration, Reset};
 use core::fmt::Debug;
-use embedded_hal::blocking::i2c;
+use embedded_hal::i2c::I2c;
 use errors::{
     BusVoltageReadError, ConfigurationReadError, InitializationError, MeasurementError,
     ShuntVoltageReadError,
@@ -65,9 +65,9 @@ pub struct INA219<I2C, Calib> {
     calib: Calib,
 }
 
-impl<I2C, E, Calib> INA219<I2C, Calib>
+impl<I2C, Calib> INA219<I2C, Calib>
 where
-    I2C: i2c::Write<Error = E> + i2c::WriteRead<Error = E>,
+    I2C: I2c,
     Calib: Calibration,
 {
     /// Open an INA219, perform a reset and check all register values are in the expected ranges
@@ -78,7 +78,7 @@ where
         i2c: I2C,
         address: address::Address,
         calibration: Calib,
-    ) -> Result<Self, InitializationError<E>> {
+    ) -> Result<Self, InitializationError<I2C::Error>> {
         let mut new = INA219::new_unchecked(i2c, address, Configuration::default(), calibration);
 
         new.reset()?;
@@ -160,7 +160,7 @@ where
     ///
     /// # Errors
     /// Returns Err() when the underlying I2C device returns an error.
-    pub fn reset(&mut self) -> Result<(), E> {
+    pub fn reset(&mut self) -> Result<(), I2C::Error> {
         self.set_configuration(Configuration {
             reset: Reset::Reset,
             ..Default::default()
@@ -171,7 +171,7 @@ where
     ///
     /// # Errors
     /// Returns Err() when the underlying I2C device returns an error.
-    pub fn configuration(&mut self) -> Result<Configuration, ConfigurationReadError<E>> {
+    pub fn configuration(&mut self) -> Result<Configuration, ConfigurationReadError<I2C::Error>> {
         // TODO: How to handle case where read and self.config disagree
 
         let conf = self.read_configuration()?;
@@ -186,7 +186,7 @@ where
         Ok(conf)
     }
 
-    fn read_configuration(&mut self) -> Result<Configuration, E> {
+    fn read_configuration(&mut self) -> Result<Configuration, I2C::Error> {
         let bits = self.read_raw(Register::Configuration)?;
         Ok(Configuration::from_bits(bits))
     }
@@ -195,7 +195,7 @@ where
     ///
     /// # Errors
     /// Returns Err() when the underlying I2C device returns an error.
-    pub fn set_configuration(&mut self, conf: Configuration) -> Result<(), E> {
+    pub fn set_configuration(&mut self, conf: Configuration) -> Result<(), I2C::Error> {
         match self.write(Register::Configuration, conf.as_bits()) {
             ok @ Ok(()) => {
                 self.config = conf;
@@ -212,12 +212,12 @@ where
     ///
     /// # Errors
     /// Returns Err() when the underlying I2C device returns an error.
-    pub fn calibrate(&mut self, value: Calib) -> Result<(), E> {
+    pub fn calibrate(&mut self, value: Calib) -> Result<(), I2C::Error> {
         self.calib = value;
         self.calibrate_raw(self.calib.register_bits())
     }
 
-    fn calibrate_raw(&mut self, value: u16) -> Result<(), E> {
+    fn calibrate_raw(&mut self, value: u16) -> Result<(), I2C::Error> {
         self.write(Register::Calibration, value)
     }
 
@@ -232,7 +232,7 @@ where
                                       // Remove when https://github.com/rust-lang/rust/issues/8995 is resolved
     pub fn next_measurement(
         &mut self,
-    ) -> Result<Option<Measurements<Calib::Current, Calib::Power>>, MeasurementError<E>> {
+    ) -> Result<Option<Measurements<Calib::Current, Calib::Power>>, MeasurementError<I2C::Error>> {
         let bus_voltage = self.bus_voltage()?;
         if !bus_voltage.is_conversion_ready() {
             // No new data... nothing to do...
@@ -272,7 +272,7 @@ where
     /// # Errors
     /// Returns an error if the underlying I2C device returns an error or when the shunt voltage
     /// is outside of the expected range given in the last written configuration.
-    pub fn shunt_voltage(&mut self) -> Result<ShuntVoltage, ShuntVoltageReadError<E>> {
+    pub fn shunt_voltage(&mut self) -> Result<ShuntVoltage, ShuntVoltageReadError<I2C::Error>> {
         let value = self.read_raw(Register::ShuntVoltage)?;
         ShuntVoltage::from_bits_with_range(value, self.config.shunt_voltage_range).ok_or(
             ShuntVoltageReadError::ShuntVoltageOutOfRange {
@@ -287,7 +287,7 @@ where
     /// # Errors
     /// Returns an error if the underlying I2C device returns an error or when the bus voltage
     /// is outside of the expected range given in the last written configuration.
-    pub fn bus_voltage(&mut self) -> Result<BusVoltage, BusVoltageReadError<E>> {
+    pub fn bus_voltage(&mut self) -> Result<BusVoltage, BusVoltageReadError<I2C::Error>> {
         let value = self.read_raw(Register::BusVoltage)?;
         BusVoltage::from_bits_with_range(value, self.config.bus_voltage_range).ok_or(
             BusVoltageReadError::BusVoltageOutOfRange {
@@ -301,7 +301,7 @@ where
     ///
     /// # Errors
     /// Returns an error if the underlying I2C device returns an error.
-    fn power_raw(&mut self) -> Result<PowerRegister, E> {
+    fn power_raw(&mut self) -> Result<PowerRegister, I2C::Error> {
         let bits = self.read_raw(Register::Power)?;
         Ok(PowerRegister(bits))
     }
@@ -310,7 +310,7 @@ where
     ///
     /// # Errors
     /// Returns an error if the underlying I2C device returns an error.
-    fn current_raw(&mut self) -> Result<CurrentRegister, E> {
+    fn current_raw(&mut self) -> Result<CurrentRegister, I2C::Error> {
         let bits = self.read_raw(Register::Current)?;
         Ok(CurrentRegister(bits))
     }
@@ -319,14 +319,14 @@ where
     ///
     /// # Errors
     /// Returns an error if the underlying I2C device returns an error.
-    fn read_raw(&mut self, register: Register) -> Result<u16, E> {
+    fn read_raw(&mut self, register: Register) -> Result<u16, I2C::Error> {
         let mut buf: [u8; 2] = [0x00; 2];
         self.i2c
             .write_read(self.address.as_byte(), &[register as u8], &mut buf)?;
         Ok(u16::from_be_bytes(buf))
     }
 
-    fn write(&mut self, register: Register, value: u16) -> Result<(), E> {
+    fn write(&mut self, register: Register, value: u16) -> Result<(), I2C::Error> {
         let [val0, val1] = value.to_be_bytes();
         self.i2c
             .write(self.address.as_byte(), &[register as u8, val0, val1])

@@ -64,14 +64,14 @@ impl Pin {
 /// assert_eq!(address.as_byte(), 0b100_1110);
 /// ```
 ///
-/// Or it can be set based on a byte. This will return `None` if the byte does not represent a valid address.
+/// Or it can be set based on a byte. This will return `Err` if the byte does not represent a valid address.
 /// ```rust
 /// use ina219::address::{Address, Pin};
 ///
 /// let address = Address::from_byte(0b100_1011).unwrap();
 /// assert_eq!(address.as_byte(), 0b100_1011);
 ///
-/// assert!(Address::from_byte(42).is_none());
+/// assert!(Address::from_byte(42).is_err());
 /// ```
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct Address {
@@ -117,7 +117,7 @@ impl Address {
     /// ```rust
     /// # use ina219::address::{Address, Pin};
     ///
-    /// assert!(Address::from_byte(42).is_none());
+    /// assert!(Address::from_byte(42).is_err());
     /// ```
     pub const fn from_byte(byte: u8) -> Result<Self, OutOfRange> {
         match byte {

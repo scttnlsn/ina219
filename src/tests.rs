@@ -4,7 +4,7 @@ use crate::configuration::{BusVoltageRange, ShuntVoltageRange};
 use crate::errors::{BusVoltageReadError, MeasurementError, ShuntVoltageReadError};
 use crate::measurements::Measurements;
 use crate::{Register, INA219};
-use embedded_hal_mock::i2c::{Mock as I2cMock, Transaction};
+use embedded_hal_mock::eh1::i2c::{Mock as I2cMock, Transaction};
 
 const DEV_ADDR: u8 = 0x40;
 
