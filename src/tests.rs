@@ -19,6 +19,24 @@ fn read_reg(reg: RegisterName, value: u16) -> Transaction {
     )
 }
 
+/// Create the expected `Transaction` for a register read
+#[allow(clippy::cast_possible_truncation)]
+fn read_many(reads: &[(RegisterName, u16)]) -> Vec<Transaction> {
+    let mut out = vec![];
+    out.push(Transaction::transaction_start(DEV_ADDR));
+
+    for (reg, value) in reads.iter().copied() {
+        out.push(Transaction::write(DEV_ADDR, vec![reg as u8]));
+        out.push(Transaction::read(
+            DEV_ADDR,
+            vec![(value >> 8) as u8, (value & 0xFF) as u8],
+        ));
+    }
+
+    out.push(Transaction::transaction_end(DEV_ADDR));
+    out
+}
+
 /// Create the expected `Transaction` for a register write
 #[allow(clippy::cast_possible_truncation)]
 fn write_reg(reg: RegisterName, value: u16) -> Transaction {
@@ -98,14 +116,14 @@ fn initialization_cal() {
 fn read_measurements() {
     use RegisterName::{BusVoltage, Power, ShuntVoltage};
 
-    let mut ina = mock_uncal(&[
+    let mut ina = mock_uncal(&read_many(&[
         // Should first read the bus voltage and see that the "Conversion Ready" flag is set
-        read_reg(BusVoltage, bus_voltage(16_000) | CONVERSION_READY),
+        (BusVoltage, bus_voltage(16_000) | CONVERSION_READY),
         // Should then read the power register to clear the "Conversion Ready" flag
-        read_reg(Power, 0),
+        (Power, 0),
         // Since there is a new "Conversion Ready" the driver should read the shunt voltage
-        read_reg(ShuntVoltage, 0b0001_1111_0100_0000), // Borrowed from datasheet table
-    ]);
+        (ShuntVoltage, 0b0001_1111_0100_0000), // Borrowed from datasheet table
+    ]));
 
     let m = ina
         .next_measurement()
@@ -122,13 +140,13 @@ fn read_measurements() {
 fn read_measurements_with_cal() {
     use RegisterName::{BusVoltage, Current, Power, ShuntVoltage};
 
-    let mut ina = mock_cal(&[
-        read_reg(BusVoltage, bus_voltage(16_000) | CONVERSION_READY),
-        read_reg(Power, 636),
-        read_reg(ShuntVoltage, 0b0001_1111_0100_0000),
+    let mut ina = mock_cal(&read_many(&[
+        (BusVoltage, bus_voltage(16_000) | CONVERSION_READY),
+        (Power, 636),
+        (ShuntVoltage, 0b0001_1111_0100_0000),
         // Additionally to `read_measurements` test now should also read the current register
-        read_reg(Current, 796),
-    ]);
+        (Current, 796),
+    ]));
 
     let m = ina
         .next_measurement()
@@ -149,14 +167,14 @@ fn read_measurements_with_cal() {
 fn math_overflow() {
     use RegisterName::{BusVoltage, Power, ShuntVoltage};
 
-    let mut ina = mock_cal(&[
-        read_reg(
+    let mut ina = mock_uncal(&read_many(&[
+        (
             BusVoltage,
             bus_voltage(16_000) | CONVERSION_READY | MATH_OVERFLOW,
         ),
-        read_reg(Power, 636),
-        read_reg(ShuntVoltage, 0b0001_1111_0100_0000),
-    ]);
+        (Power, 636),
+        (ShuntVoltage, 0b0001_1111_0100_0000),
+    ]));
 
     let err = ina
         .next_measurement()

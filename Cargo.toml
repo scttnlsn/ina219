@@ -19,16 +19,12 @@ std = []
 # - We can read back the configuration we have written without any changes
 #
 # This does cause some overhead such as memorizing the last written configuration and performing more actions on the
-# bus. So it can be disable by setting `default-features = false`.
+# bus. So it can be disabled by setting `default-features = false`.
 paranoid = []
 
 [dependencies]
-embedded-hal = "1.0.0-rc.1"
+embedded-hal = "1.0.0"
 
 [dev-dependencies]
-linux-embedded-hal = "0.4.0-alpha.3"
-embedded-hal-mock = { version = "0.9.0", default-features = false, features = ["eh1"] }
-
-[patch.crates-io]
-linux-embedded-hal = { git = "https://github.com/rust-embedded/linux-embedded-hal/", rev = "27daf71e8ee22ff2b33fca5972a47dd139de69e2" }
-embedded-hal-mock = { git = "https://github.com/newAM/embedded-hal-mock/", rev = "27ec847f3890c3406c33c0804d71a25ca6771941" }
+linux-embedded-hal = "0.4.0-alpha.4"
+embedded-hal-mock = { version = "0.10.0", default-features = false, features = ["eh1"] }

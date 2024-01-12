@@ -251,7 +251,12 @@ where
     pub fn next_measurement(
         &mut self,
     ) -> Result<Option<Measurements<Calib>>, MeasurementError<I2C::Error>> {
-        let (bus_voltage, power, shunt_voltage, current) = self.read4()?;
+        let (bus_voltage, power, shunt_voltage, current) = if Calib::READ_CURRENT {
+            self.read4()?
+        } else {
+            let (bus_voltage, power, shunt_voltage) = self.read3()?;
+            (bus_voltage, power, shunt_voltage, CurrentRegister(0))
+        };
 
         let bus_voltage = self.bus_voltage_from_register(bus_voltage)?;
         if !bus_voltage.is_conversion_ready() {
@@ -365,6 +370,35 @@ where
         self.i2c
             .write_read(self.address.as_byte(), &[Reg::ADDRESS], &mut buf)?;
         Ok(Reg::from_bits(u16::from_be_bytes(buf)))
+    }
+
+    fn read3<R0, R1, R2>(&mut self) -> Result<(R0, R1, R2), I2C::Error>
+    where
+        R0: register::ReadRegister,
+        R1: register::ReadRegister,
+        R2: register::ReadRegister,
+    {
+        let mut b0: [u8; 2] = [0x00; 2];
+        let mut b1: [u8; 2] = [0x00; 2];
+        let mut b2: [u8; 2] = [0x00; 2];
+
+        let mut transactions = [
+            Operation::Write(&[R0::ADDRESS]),
+            Operation::Read(&mut b0),
+            Operation::Write(&[R1::ADDRESS]),
+            Operation::Read(&mut b1),
+            Operation::Write(&[R2::ADDRESS]),
+            Operation::Read(&mut b2),
+        ];
+
+        self.i2c
+            .transaction(self.address.as_byte(), &mut transactions[..])?;
+
+        Ok((
+            R0::from_bits(u16::from_be_bytes(b0)),
+            R1::from_bits(u16::from_be_bytes(b1)),
+            R2::from_bits(u16::from_be_bytes(b2)),
+        ))
     }
 
     fn read4<R0, R1, R2, R3>(&mut self) -> Result<(R0, R1, R2, R3), I2C::Error>
