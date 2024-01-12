@@ -1,26 +1,26 @@
+#![cfg_attr(not(any(feature = "sync", feature = "async")), allow(dead_code))]
+
 //! Errors that can be returned by the different functions
 
 use crate::calibration::UnCalibrated;
 use crate::configuration::{BusVoltageRange, Configuration, ShuntVoltageRange};
 use crate::measurements::{BusVoltage, Measurements, ShuntVoltage};
-use core::fmt;
-use core::fmt::{Debug, Display, Formatter};
-use embedded_hal::i2c;
-
 use crate::register::RegisterName;
 #[cfg(doc)]
 use crate::INA219;
+use core::fmt;
+use core::fmt::{Debug, Display, Formatter};
 
 /// Error returned in case the initialization fails
-pub struct InitializationError<I2c: i2c::I2c> {
+pub struct InitializationError<I2c, I2cErr> {
     /// Reason why the initialization failed
-    pub reason: InitializationErrorReason<I2c::Error>,
+    pub reason: InitializationErrorReason<I2cErr>,
     /// The I2C device that was passed into [`INA219::new`] or [`INA219::new_calibrated`]
     pub device: I2c,
 }
 
-impl<I2c: i2c::I2c> InitializationError<I2c> {
-    pub(crate) fn new(err: impl Into<InitializationErrorReason<I2c::Error>>, device: I2c) -> Self {
+impl<I2c, I2cErr> InitializationError<I2c, I2cErr> {
+    pub(crate) fn new(err: impl Into<InitializationErrorReason<I2cErr>>, device: I2c) -> Self {
         Self {
             reason: err.into(),
             device,
@@ -28,7 +28,7 @@ impl<I2c: i2c::I2c> InitializationError<I2c> {
     }
 }
 
-impl<I2c: i2c::I2c> Debug for InitializationError<I2c> {
+impl<I2c, I2cErr: Debug> Debug for InitializationError<I2c, I2cErr> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_tuple("InitializationError")
             .field(&self.reason)
@@ -76,10 +76,10 @@ impl<E> From<BusVoltageReadError<E>> for InitializationErrorReason<E> {
 }
 
 #[cfg(feature = "std")]
-impl<I2c: i2c::I2c> std::error::Error for InitializationError<I2c>
+impl<I2c, I2cErr> std::error::Error for InitializationError<I2c, I2cErr>
 where
     I2c: Debug,
-    I2c::Error: Debug + std::error::Error + 'static,
+    I2cErr: Debug + std::error::Error + 'static,
 {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match &self.reason {
@@ -92,10 +92,7 @@ where
     }
 }
 
-impl<I2c: i2c::I2c> Display for InitializationError<I2c>
-where
-    I2c::Error: Debug,
-{
+impl<I2c, I2cErr: Debug> Display for InitializationError<I2c, I2cErr> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self.reason {
             InitializationErrorReason::I2cError(err) => write!(f, "I2C error: {err:?}"),

@@ -9,7 +9,11 @@ authors = ["Scott Nelson <scott@scottnelson.co>", "Tamme Dittrich <tamme@tweedeg
 license = "MIT/Apache-2.0"
 
 [features]
-default = ["paranoid"]
+default = ["paranoid", "sync", "async"]
+
+sync = ["dep:embedded-hal"]
+async = ["dep:embedded-hal-async"]
+
 
 # Use the standard library and impl std::error::Error on all error types
 std = []
@@ -22,9 +26,14 @@ std = []
 # bus. So it can be disabled by setting `default-features = false`.
 paranoid = []
 
+[[example]]
+name = "values"
+required-features = ["sync"]
+
 [dependencies]
-embedded-hal = "1.0.0"
+embedded-hal = { version = "1.0.0", optional = true }
+embedded-hal-async = { version = "1.0.0", optional = true }
 
 [dev-dependencies]
 linux-embedded-hal = "0.4.0-alpha.4"
-embedded-hal-mock = { version = "0.10.0", default-features = false, features = ["eh1"] }
+embedded-hal-mock = { version = "0.10.0", default-features = false, features = ["eh1", "embedded-hal-async"] }

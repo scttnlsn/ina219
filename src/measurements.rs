@@ -1,3 +1,5 @@
+#![cfg_attr(not(any(feature = "sync", feature = "async")), allow(dead_code))]
+
 //! Types wrapping the measurements of the INA219
 //!
 //! These types help converting the ras register values into expressive values.
