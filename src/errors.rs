@@ -6,16 +6,18 @@ use crate::calibration::UnCalibrated;
 use crate::configuration::{BusVoltageRange, Configuration, ShuntVoltageRange};
 use crate::measurements::{BusVoltage, Measurements, ShuntVoltage};
 use crate::register::RegisterName;
-#[cfg(doc)]
-use crate::INA219;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 
+#[cfg(all(doc, feature = "sync"))]
+use crate::SyncIna219;
+
 /// Error returned in case the initialization fails
+#[cfg_attr(not(feature = "sync"), allow(rustdoc::broken_intra_doc_links))]
 pub struct InitializationError<I2c, I2cErr> {
     /// Reason why the initialization failed
     pub reason: InitializationErrorReason<I2cErr>,
-    /// The I2C device that was passed into [`INA219::new`] or [`INA219::new_calibrated`]
+    /// The I2C device that was passed into [`SyncIna219::new`] or [`SyncIna219::new_calibrated`]
     pub device: I2c,
 }
 
