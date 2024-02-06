@@ -406,85 +406,8 @@ where
         Ok(Reg::from_bits(u16::from_be_bytes(buf)))
     }
 
-    async fn read3<R0, R1, R2>(&mut self) -> Result<(R0, R1, R2), I2C::Error>
-    where
-        R0: register::ReadRegister,
-        R1: register::ReadRegister,
-        R2: register::ReadRegister,
-    {
-        let mut b0: [u8; 2] = [0x00; 2];
-        let mut b1: [u8; 2] = [0x00; 2];
-        let mut b2: [u8; 2] = [0x00; 2];
-
-        if cfg!(feature = "no_transaction") {
-            let addr = self.address.as_byte();
-            self.i2c.write_read(addr, &[R0::ADDRESS], &mut b0).await?;
-            self.i2c.write_read(addr, &[R1::ADDRESS], &mut b1).await?;
-            self.i2c.write_read(addr, &[R2::ADDRESS], &mut b2).await?;
-        } else {
-            let mut transactions = [
-                Operation::Write(&[R0::ADDRESS]),
-                Operation::Read(&mut b0),
-                Operation::Write(&[R1::ADDRESS]),
-                Operation::Read(&mut b1),
-                Operation::Write(&[R2::ADDRESS]),
-                Operation::Read(&mut b2),
-            ];
-
-            self.i2c
-                .transaction(self.address.as_byte(), &mut transactions[..])
-                .await?;
-        }
-
-        Ok((
-            R0::from_bits(u16::from_be_bytes(b0)),
-            R1::from_bits(u16::from_be_bytes(b1)),
-            R2::from_bits(u16::from_be_bytes(b2)),
-        ))
-    }
-
-    async fn read4<R0, R1, R2, R3>(&mut self) -> Result<(R0, R1, R2, R3), I2C::Error>
-    where
-        R0: register::ReadRegister,
-        R1: register::ReadRegister,
-        R2: register::ReadRegister,
-        R3: register::ReadRegister,
-    {
-        let mut b0: [u8; 2] = [0x00; 2];
-        let mut b1: [u8; 2] = [0x00; 2];
-        let mut b2: [u8; 2] = [0x00; 2];
-        let mut b3: [u8; 2] = [0x00; 2];
-
-        if cfg!(feature = "no_transaction") {
-            let addr = self.address.as_byte();
-            self.i2c.write_read(addr, &[R0::ADDRESS], &mut b0).await?;
-            self.i2c.write_read(addr, &[R1::ADDRESS], &mut b1).await?;
-            self.i2c.write_read(addr, &[R2::ADDRESS], &mut b2).await?;
-            self.i2c.write_read(addr, &[R3::ADDRESS], &mut b3).await?;
-        } else {
-            let mut transactions = [
-                Operation::Write(&[R0::ADDRESS]),
-                Operation::Read(&mut b0),
-                Operation::Write(&[R1::ADDRESS]),
-                Operation::Read(&mut b1),
-                Operation::Write(&[R2::ADDRESS]),
-                Operation::Read(&mut b2),
-                Operation::Write(&[R3::ADDRESS]),
-                Operation::Read(&mut b3),
-            ];
-
-            self.i2c
-                .transaction(self.address.as_byte(), &mut transactions[..])
-                .await?;
-        }
-
-        Ok((
-            R0::from_bits(u16::from_be_bytes(b0)),
-            R1::from_bits(u16::from_be_bytes(b1)),
-            R2::from_bits(u16::from_be_bytes(b2)),
-            R3::from_bits(u16::from_be_bytes(b3)),
-        ))
-    }
+    read_many!(read3, (R0, b0), (R1, b1), (R2, b2));
+    read_many!(read4, (R0, b0), (R1, b1), (R2, b2), (R3, b3));
 
     /// Write the value contained in the register to the address dictated by its type
     async fn write(&mut self, reg: impl WriteRegister + Copy) -> Result<(), I2C::Error> {
@@ -502,3 +425,28 @@ async fn write<I2C: I2c, Reg: WriteRegister>(
     let [val0, val1] = value.as_bits().to_be_bytes();
     dev.write(addr.as_byte(), &[Reg::ADDRESS, val0, val1]).await
 }
+
+macro_rules! read_many {
+    ($name:ident, $(($reg:ident, $buf:ident)),+) => {
+        async fn $name<$($reg),+>(&mut self) -> Result<($($reg,)+), I2C::Error>
+        where
+            $($reg: register::ReadRegister),+
+        {
+            $(let mut $buf: [u8; 2] = [0x00; 2];)+
+            if cfg!(feature = "no_transaction") {
+                let addr = self.address.as_byte();
+                $(self.i2c.write_read(addr, &[$reg::ADDRESS], &mut $buf).await?;)+
+            } else {
+                let mut transactions = [
+                    $(Operation::Write(&[$reg::ADDRESS]), Operation::Read(&mut $buf),)+
+                ];
+                self.i2c
+                    .transaction(self.address.as_byte(), &mut transactions[..])
+                    .await?;
+            }
+
+            Ok(($($reg::from_bits(u16::from_be_bytes($buf)),)+))
+        }
+    };
+}
+use read_many;
