@@ -2,8 +2,7 @@
 #![warn(clippy::pedantic)]
 #![warn(clippy::missing_const_for_fn)]
 #![warn(missing_docs)]
-
-//! TODO: crate level docs
+#![doc = include_str!("../README.md")]
 
 pub mod address;
 pub mod calibration;
