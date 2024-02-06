@@ -392,6 +392,33 @@ impl Configuration {
         bits = operating_mode.apply_to_reg(bits);
         bits
     }
+
+    /// Total conversion time in µs with this configuration
+    #[must_use]
+    pub const fn conversion_time_us(self) -> Option<u32> {
+        let signals = match self.operating_mode {
+            OperatingMode::PowerDown | OperatingMode::AdcOff => return None,
+            OperatingMode::Triggered(s) | OperatingMode::Continous(s) => s,
+        };
+
+        Some(match signals {
+            MeasuredSignals::ShuntVoltage => self.shunt_resolution.conversion_time_us(),
+            MeasuredSignals::BusVoltage => self.bus_resolution.conversion_time_us(),
+            MeasuredSignals::ShutAndBusVoltage => {
+                self.shunt_resolution.conversion_time_us()
+                    + self.bus_resolution.conversion_time_us()
+            }
+        })
+    }
+
+    /// Total conversion time as `std::time::Duration`
+    #[cfg(feature = "std")]
+    #[must_use]
+    pub fn conversion_time(&self) -> Option<std::time::Duration> {
+        self.conversion_time_us()
+            .map(u64::from)
+            .map(std::time::Duration::from_micros)
+    }
 }
 
 impl Register for Configuration {

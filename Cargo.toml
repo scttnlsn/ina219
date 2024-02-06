@@ -9,9 +9,12 @@ authors = ["Scott Nelson <scott@scottnelson.co>", "Tamme Dittrich <tamme@tweedeg
 license = "MIT/Apache-2.0"
 
 [features]
-default = ["paranoid", "sync", "async"]
+default = ["sync", "async", "paranoid"]
 
+# Provide a blocking driver implementation
 sync = ["dep:embedded-hal"]
+
+# Provide an async driver implementation
 async = ["dep:embedded-hal-async"]
 
 
@@ -26,14 +29,34 @@ std = []
 # bus. So it can be disabled by setting `default-features = false`.
 paranoid = []
 
+# When using a raspberry pi and the I2C transaction an operation not supported error is raised. This feature replaces
+# the usage of a single transaction with multiple write_read operations.
+no_transaction = []
+
 [[example]]
-name = "values"
-required-features = ["sync"]
+name = "calibration"
+required-features = ["sync", "std", "no_transaction"]
+
+[[example]]
+name = "custom-calibration"
+required-features = ["sync", "std", "no_transaction"]
+
+[[example]]
+name = "full-config"
+required-features = ["sync", "std", "no_transaction"]
+
+[[example]]
+name = "minimal"
+required-features = ["sync", "std", "no_transaction"]
+
+[[example]]
+name = "triggered"
+required-features = ["sync", "std", "no_transaction"]
 
 [dependencies]
 embedded-hal = { version = "1.0.0", optional = true }
 embedded-hal-async = { version = "1.0.0", optional = true }
 
 [dev-dependencies]
-linux-embedded-hal = "0.4.0-alpha.4"
-embedded-hal-mock = { version = "0.10.0", default-features = false, features = ["eh1", "embedded-hal-async"] }
+linux-embedded-hal = "0.4.0"
+embedded-hal-mock = { version = "0.10.0", default-features = false, features = ["eh1"] }

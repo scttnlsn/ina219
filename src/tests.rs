@@ -21,6 +21,7 @@ fn read_reg(reg: RegisterName, value: u16) -> Transaction {
 
 /// Create the expected `Transaction` for a register read
 #[allow(clippy::cast_possible_truncation)]
+#[cfg(not(feature = "no_transaction"))]
 fn read_many(reads: &[(RegisterName, u16)]) -> Vec<Transaction> {
     let mut out = vec![];
     out.push(Transaction::transaction_start(DEV_ADDR));
@@ -34,6 +35,23 @@ fn read_many(reads: &[(RegisterName, u16)]) -> Vec<Transaction> {
     }
 
     out.push(Transaction::transaction_end(DEV_ADDR));
+    out
+}
+
+/// Create the expected `Transaction` for a register read
+#[allow(clippy::cast_possible_truncation)]
+#[cfg(feature = "no_transaction")]
+fn read_many(reads: &[(RegisterName, u16)]) -> Vec<Transaction> {
+    let mut out = vec![];
+
+    for (reg, value) in reads.iter().copied() {
+        out.push(Transaction::write_read(
+            DEV_ADDR,
+            vec![reg as u8],
+            vec![(value >> 8) as u8, (value & 0xFF) as u8],
+        ));
+    }
+
     out
 }
 

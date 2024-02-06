@@ -155,10 +155,19 @@ where
         })
         .await?;
 
+        #[cfg(feature = "paranoid")]
+        {
+            self.config = None; // Reset is actually never read back, so it does not make sense to store it.
+        }
+
         // Wait until the device reports that it is done
         let mut attempt = 0;
         loop {
             if self.read::<Configuration>().await? == Configuration::default() {
+                #[cfg(feature = "paranoid")]
+                {
+                    self.config = Some(Configuration::default());
+                }
                 return Ok(());
             }
 
@@ -218,6 +227,37 @@ where
         result
     }
 
+    /// Trigger a new measurement
+    ///
+    /// This reads the current configuration and writes it again. This causes a measurement to be made if the chip is in
+    /// triggered mode. If it is in any other mode this does nothing.
+    ///
+    /// # Errors
+    /// Returns an error if the underlying I2C device returned an error.
+    pub async fn trigger(&mut self) -> Result<(), I2C::Error> {
+        let config = {
+            #[cfg(feature = "paranoid")]
+            {
+                self.config
+            }
+            #[cfg(not(feature = "paranoid"))]
+            {
+                None
+            }
+        };
+
+        let old_config = match config {
+            None => match self.configuration().await {
+                Ok(c) => c,
+                Err(ConfigurationReadError::I2cError(e)) => return Err(e),
+                Err(ConfigurationReadError::ConfigurationMismatch { .. }) => unreachable!("This can only happen if we are paranoid and have stored a configuration. But in that case we never perform a read!"),
+            },
+            Some(c) => c,
+        };
+
+        self.set_configuration(old_config).await
+    }
+
     /// Set a new [`Calibration`]
     ///
     /// # Errors
@@ -235,9 +275,11 @@ where
     /// # Errors
     /// Returns an error if the underlying I2C device returns an error or when any of the
     /// measurements is outside of their expected ranges.
+    #[allow(clippy::type_complexity)] // FIXME: Find a more elegant type
     pub async fn next_measurement(
         &mut self,
-    ) -> Result<Option<Measurements<Calib>>, MeasurementError<I2C::Error>> {
+    ) -> Result<Option<Measurements<Calib::Current, Calib::Power>>, MeasurementError<I2C::Error>>
+    {
         let (bus_voltage, power, shunt_voltage, current) = if Calib::READ_CURRENT {
             self.read4().await?
         } else {
@@ -374,18 +416,25 @@ where
         let mut b1: [u8; 2] = [0x00; 2];
         let mut b2: [u8; 2] = [0x00; 2];
 
-        let mut transactions = [
-            Operation::Write(&[R0::ADDRESS]),
-            Operation::Read(&mut b0),
-            Operation::Write(&[R1::ADDRESS]),
-            Operation::Read(&mut b1),
-            Operation::Write(&[R2::ADDRESS]),
-            Operation::Read(&mut b2),
-        ];
+        if cfg!(feature = "no_transaction") {
+            let addr = self.address.as_byte();
+            self.i2c.write_read(addr, &[R0::ADDRESS], &mut b0).await?;
+            self.i2c.write_read(addr, &[R1::ADDRESS], &mut b1).await?;
+            self.i2c.write_read(addr, &[R2::ADDRESS], &mut b2).await?;
+        } else {
+            let mut transactions = [
+                Operation::Write(&[R0::ADDRESS]),
+                Operation::Read(&mut b0),
+                Operation::Write(&[R1::ADDRESS]),
+                Operation::Read(&mut b1),
+                Operation::Write(&[R2::ADDRESS]),
+                Operation::Read(&mut b2),
+            ];
 
-        self.i2c
-            .transaction(self.address.as_byte(), &mut transactions[..])
-            .await?;
+            self.i2c
+                .transaction(self.address.as_byte(), &mut transactions[..])
+                .await?;
+        }
 
         Ok((
             R0::from_bits(u16::from_be_bytes(b0)),
@@ -406,20 +455,28 @@ where
         let mut b2: [u8; 2] = [0x00; 2];
         let mut b3: [u8; 2] = [0x00; 2];
 
-        let mut transactions = [
-            Operation::Write(&[R0::ADDRESS]),
-            Operation::Read(&mut b0),
-            Operation::Write(&[R1::ADDRESS]),
-            Operation::Read(&mut b1),
-            Operation::Write(&[R2::ADDRESS]),
-            Operation::Read(&mut b2),
-            Operation::Write(&[R3::ADDRESS]),
-            Operation::Read(&mut b3),
-        ];
+        if cfg!(feature = "no_transaction") {
+            let addr = self.address.as_byte();
+            self.i2c.write_read(addr, &[R0::ADDRESS], &mut b0).await?;
+            self.i2c.write_read(addr, &[R1::ADDRESS], &mut b1).await?;
+            self.i2c.write_read(addr, &[R2::ADDRESS], &mut b2).await?;
+            self.i2c.write_read(addr, &[R3::ADDRESS], &mut b3).await?;
+        } else {
+            let mut transactions = [
+                Operation::Write(&[R0::ADDRESS]),
+                Operation::Read(&mut b0),
+                Operation::Write(&[R1::ADDRESS]),
+                Operation::Read(&mut b1),
+                Operation::Write(&[R2::ADDRESS]),
+                Operation::Read(&mut b2),
+                Operation::Write(&[R3::ADDRESS]),
+                Operation::Read(&mut b3),
+            ];
 
-        self.i2c
-            .transaction(self.address.as_byte(), &mut transactions[..])
-            .await?;
+            self.i2c
+                .transaction(self.address.as_byte(), &mut transactions[..])
+                .await?;
+        }
 
         Ok((
             R0::from_bits(u16::from_be_bytes(b0)),

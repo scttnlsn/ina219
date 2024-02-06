@@ -3,8 +3,8 @@
 //! Types wrapping the measurements of the INA219
 //!
 //! These types help converting the ras register values into expressive values.
-use crate::calibration::Calibration;
 use crate::configuration::{BusVoltageRange, ShuntVoltageRange};
+use core::fmt::{Debug, Display, Formatter};
 
 #[cfg(doc)]
 use crate::configuration::OperatingMode::{AdcOff, PowerDown};
@@ -12,15 +12,15 @@ use crate::register::{ReadRegister, Register};
 
 /// A collection of all the measurements collected by the INA219
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub struct Measurements<Calib: Calibration> {
+pub struct Measurements<Current, Power> {
     /// Measured `BusVoltage`
     pub bus_voltage: BusVoltage,
     /// Measured `ShuntVoltage`
     pub shunt_voltage: ShuntVoltage,
     /// Measured `Current`
-    pub current: Calib::Current,
+    pub current: Current,
     /// Measured `Power`
-    pub power: Calib::Power,
+    pub power: Power,
 }
 
 /// Errors that can arise when current and power are calculated
@@ -31,7 +31,7 @@ pub enum MathErrors {
 }
 
 /// A shunt voltage measurement as read from the shunt voltage register
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+#[derive(Default, Copy, Clone, Eq, PartialEq)]
 pub struct ShuntVoltage(i16);
 
 impl ShuntVoltage {
@@ -86,6 +86,36 @@ impl ShuntVoltage {
     pub const fn shunt_voltage_mv(self) -> i16 {
         self.0 / 100
     }
+
+    /// For testing: create a `ShuntVoltage` from a value of unit 10µV
+    ///
+    /// # Example
+    /// ```
+    /// use ina219::measurements::ShuntVoltage;
+    /// assert_eq!(ShuntVoltage::from_10uv(100).shunt_voltage_uv(), 1_000);
+    /// ```
+    #[must_use]
+    pub const fn from_10uv(uv: i16) -> Self {
+        Self(uv)
+    }
+
+    pub(crate) const fn raw(self) -> u16 {
+        u16::from_ne_bytes(self.0.to_ne_bytes())
+    }
+}
+
+impl Display for ShuntVoltage {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{} µV", self.shunt_voltage_uv())
+    }
+}
+
+impl Debug for ShuntVoltage {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ShuntVoltage")
+            .field("micro_volt", &self.shunt_voltage_uv())
+            .finish()
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -104,7 +134,7 @@ impl ReadRegister for ShuntVoltageRegister {
 /// Contents of the bus voltage register
 ///
 /// This contains next to the measurement also some flags about the last measurement.
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+#[derive(Default, Copy, Clone, Eq, PartialEq)]
 pub struct BusVoltage(u16);
 
 impl BusVoltage {
@@ -162,6 +192,30 @@ impl BusVoltage {
     #[must_use]
     pub const fn has_math_overflowed(self) -> bool {
         self.0 & 1 != 0
+    }
+
+    /// For testing: Create a `BusVoltage` from a given value in mV
+    ///
+    /// The overflow flag, and the ready flag will both be false.
+    #[must_use]
+    pub const fn from_mv(mv: u16) -> Self {
+        Self((mv / 4) << 3)
+    }
+}
+
+impl Display for BusVoltage {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{} mV", self.voltage_mv())
+    }
+}
+
+impl Debug for BusVoltage {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("BusVoltage")
+            .field("milli_volt", &self.voltage_mv())
+            .field("has_math_overflowed", &self.has_math_overflowed())
+            .field("is_conversion_ready", &self.is_conversion_ready())
+            .finish()
     }
 }
 
@@ -253,6 +307,17 @@ mod tests {
     }
 
     #[test]
+    fn shunt_from_value() {
+        for x in [i16::MIN, -2, 1, 0, 1, 2, 42, i16::MAX] {
+            let mul_10 = x / 10;
+            assert_eq!(
+                ShuntVoltage::from_10uv(mul_10).shunt_voltage_uv(),
+                i32::from(mul_10) * 10
+            );
+        }
+    }
+
+    #[test]
     fn bus_voltage() {
         let bv = BusVoltage::from_bits_unchecked(BusVoltageRegister(0x1f40 << 3));
         assert_eq!(bv.voltage_mv(), 32_000);
@@ -263,6 +328,14 @@ mod tests {
         assert_eq!(bv.voltage_mv(), 16_000);
         assert!(bv.is_conversion_ready());
         assert!(bv.has_math_overflowed());
+    }
+
+    #[test]
+    fn bus_from_value() {
+        for x in [0, 4, 8, 42, 32_000] {
+            let mul_4 = x & !0b11;
+            assert_eq!(BusVoltage::from_mv(mul_4).voltage_mv(), mul_4);
+        }
     }
 
     #[test]

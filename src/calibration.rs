@@ -1,7 +1,13 @@
 //! Types and trait to calibrate the INA219
+//!
+//! **Note:** Using the calibration with the INA219 can introduce some errors into the current and power measurements.
+//! And it only saves two multiplications in software. So usage of this module should be well reasoned and errors be
+//! accounted for.
 
-use crate::measurements::{CurrentRegister, PowerRegister};
+use crate::errors::MeasurementError;
+use crate::measurements::{BusVoltage, CurrentRegister, Measurements, PowerRegister, ShuntVoltage};
 use crate::register::{ReadRegister, Register, WriteRegister};
+use core::fmt::{Display, Formatter};
 use core::ops::RangeInclusive;
 
 /// Trait describing a calibration for the INA219
@@ -25,6 +31,58 @@ pub trait Calibration {
 
     /// Return the power measurement from the given register value
     fn power_from_register(&self, reg: PowerRegister) -> Self::Power;
+}
+
+/// Simulate the calculation a real INA219 would produce
+///
+/// # Errors
+/// Returns [`MeasurementError::MathOverflow`] if the calculation would overflow.
+///
+/// # Example
+/// ```
+/// use ina219::calibration::{IntCalibration, MicroAmpere, MicroWatt, simulate};
+/// use ina219::measurements::{BusVoltage, ShuntVoltage};
+///
+/// let calib = IntCalibration::new(MicroAmpere(1_000), 1_000_000).unwrap(); // 1mA, 1Ohm
+/// assert_eq!(calib.as_bits(), 40);
+///
+/// let bus = BusVoltage::from_mv(20_000); // 20V
+/// let shunt = ShuntVoltage::from_10uv(4000); // 40mV
+///
+/// let measurement = simulate(&calib, bus, shunt).expect("Does not overflow");
+///
+/// assert_eq!(measurement.current, MicroAmpere(39_000)); // ~40mA; But the calibration introduces some error
+/// assert_eq!(measurement.power, MicroWatt(780_000)); // 20V * 39mA = 780mW
+/// ```
+pub fn simulate<C: Calibration>(
+    calib: &C,
+    bus_voltage: BusVoltage,
+    shunt_voltage: ShuntVoltage,
+) -> Result<Measurements<C::Current, C::Power>, MeasurementError<core::convert::Infallible>> {
+    const MAX: u32 = u16::MAX as u32;
+
+    let calib_reg: u32 = calib.register_bits().into();
+    let current = (u32::from(shunt_voltage.raw()) * calib_reg) / 4096;
+
+    let power = (current * u32::from(bus_voltage.voltage_4mv())) / 5000;
+    if current > MAX || power > MAX {
+        let on_error_measurement = Measurements {
+            bus_voltage,
+            shunt_voltage,
+            current: (),
+            power: (),
+        };
+        return Err(MeasurementError::MathOverflow(on_error_measurement));
+    }
+
+    // Both casts have been checked above
+    #[allow(clippy::cast_possible_truncation)]
+    Ok(Measurements {
+        bus_voltage,
+        shunt_voltage,
+        current: calib.current_from_register(CurrentRegister(current as u16)),
+        power: calib.power_from_register(PowerRegister(power as u16)),
+    })
 }
 
 impl<T: Calibration> Calibration for Option<T> {
@@ -179,9 +237,21 @@ impl IntCalibration {
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
 pub struct MicroAmpere(pub i64);
 
+impl Display for MicroAmpere {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{} µA", self.0)
+    }
+}
+
 /// A power measurement in µW
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
 pub struct MicroWatt(pub i64);
+
+impl Display for MicroWatt {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{} µW", self.0)
+    }
+}
 
 impl Calibration for IntCalibration {
     type Current = MicroAmpere;

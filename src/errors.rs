@@ -2,7 +2,6 @@
 
 //! Errors that can be returned by the different functions
 
-use crate::calibration::UnCalibrated;
 use crate::configuration::{BusVoltageRange, Configuration, ShuntVoltageRange};
 use crate::measurements::{BusVoltage, Measurements, ShuntVoltage};
 use crate::register::RegisterName;
@@ -80,7 +79,6 @@ impl<E> From<BusVoltageReadError<E>> for InitializationErrorReason<E> {
 #[cfg(feature = "std")]
 impl<I2c, I2cErr> std::error::Error for InitializationError<I2c, I2cErr>
 where
-    I2c: Debug,
     I2cErr: Debug + std::error::Error + 'static,
 {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
@@ -124,7 +122,7 @@ pub enum MeasurementError<I2cErr> {
     /// An error occurred while reading the bus voltage
     BusVoltageReadError(BusVoltageReadError<I2cErr>),
     /// The INA219 reported a math overflow for the given bus and shunt voltage
-    MathOverflow(Measurements<UnCalibrated>),
+    MathOverflow(Measurements<(), ()>),
 }
 
 impl<E> From<E> for MeasurementError<E> {
