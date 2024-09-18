@@ -1,36 +1,28 @@
 # ina219
 
-[![Travis CI Status](https://travis-ci.org/scttnlsn/ina219.svg?branch=master)](https://travis-ci.org/scttnlsn/ina219)
 [![crates.io](https://img.shields.io/crates/v/ina219.svg)](https://crates.io/crates/ina219)
 
-[INA219](http://www.ti.com/product/INA219) current/power monitor driver for Rust
+Blocking and async driver for the [INA219](http://www.ti.com/product/INA219) current/power monitor by Texas Instruments.
 
-## Example
 
-```rust
-extern crate ina219;
-extern crate linux_embedded_hal as hal;
 
-use hal::I2cdev;
-use ina219::{INA219, INA219_ADDR};
+## Features
+This crate has the following feature flags (default features in bold):
 
-fn main() {
-    let device = I2cdev::new("/dev/i2c-1").unwrap();
-    let mut ina = INA219::new(device, INA219_ADDR);
+| Name           | Description                                                            |
+|----------------|------------------------------------------------------------------------|
+| **sync**       | Provide a blocking driver implementation                               |
+| **async**      | Provide an async driver implementation                                 |
+| **paranoid**   | Perform extra checks                                                   |
+| no_transaction | Disable use of transactions and perform individual system calls        |
+| std            | Use the standard library and impl std::error::Error on all error types |
 
-    ina.calibrate(0x0100).unwrap();
+For more detailed descriptions see [Cargo.toml](Cargo.toml).
 
-    let voltage = ina.voltage().unwrap();
-    println!("bus voltage: {:?}", voltage);
+## Calibration
+This driver includes ways to use the calibration feature of the INA219. However, the errors introduced by the 
+calculations can be unintuitive. So it can make sense to just compute the current and power in software.
 
-    let shunt_voltage = ina.shunt_voltage().unwrap();
-    println!("shunt voltage: {:?}", shunt_voltage);
-
-    let current = ina.current().unwrap();
-    println!("current: {:?}", current);
-
-    let power = ina.power().unwrap();
-    println!("power: {:?}", power);
-}
-
-```
+## Examples
+The [examples](examples/) folder contains code that demonstrates how this driver can be used. They were tested on a
+Raspberry Pi with an INA219 that was configured for address 0x42.
