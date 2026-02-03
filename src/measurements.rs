@@ -110,6 +110,13 @@ impl Display for ShuntVoltage {
     }
 }
 
+#[cfg(feature = "defmt")]
+impl defmt::Format for ShuntVoltage {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(f, "{} µV", self.shunt_voltage_uv());
+    }
+}
+
 impl Debug for ShuntVoltage {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ShuntVoltage")
@@ -206,6 +213,13 @@ impl BusVoltage {
 impl Display for BusVoltage {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "{} mV", self.voltage_mv())
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for BusVoltage {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(f, "{} mV", self.voltage_mv());
     }
 }
 

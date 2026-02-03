@@ -17,6 +17,9 @@ sync = ["dep:embedded-hal"]
 # Provide an async driver implementation
 async = ["dep:embedded-hal-async"]
 
+# Provide defmt 'Format'.
+defmt = ["dep:defmt"]
+
 
 # Use the standard library and impl std::error::Error on all error types
 std = []
@@ -56,6 +59,7 @@ required-features = ["sync", "std", "no_transaction"]
 [dependencies]
 embedded-hal = { version = "1.0.0", optional = true }
 embedded-hal-async = { version = "1.0.0", optional = true }
+defmt = { version = "1", optional = true }
 
 [dev-dependencies]
 linux-embedded-hal = "0.4.0"

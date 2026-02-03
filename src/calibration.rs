@@ -243,6 +243,13 @@ impl Display for MicroAmpere {
     }
 }
 
+#[cfg(feature = "defmt")]
+impl defmt::Format for MicroAmpere {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(f, "{} µA", self.0);
+    }
+}
+
 /// A power measurement in µW
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
 pub struct MicroWatt(pub i64);
@@ -250,6 +257,13 @@ pub struct MicroWatt(pub i64);
 impl Display for MicroWatt {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "{} µW", self.0)
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for MicroWatt {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(f, "{} µW", self.0);
     }
 }
 

@@ -15,6 +15,7 @@ This crate has the following feature flags (default features in bold):
 | **async**      | Provide an async driver implementation                                 |
 | **paranoid**   | Perform extra checks                                                   |
 | no_transaction | Disable use of transactions and perform individual system calls        |
+| defmt          | Use defmt::Format instead of Display for headless/no_std systems       |
 | std            | Use the standard library and impl std::error::Error on all error types |
 
 For more detailed descriptions see [Cargo.toml](Cargo.toml).
